@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:latest
+    container_name: lostlink-mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  mongo-express:
+    image: mongo-express
+    container_name: lostlink-mongo-express
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongo
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=pass123
+    depends_on:
+      - mongo
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: lostlink-backend
+    restart: always
+    ports:
+      - "5001:5000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/lostlink
+    volumes:
+      - ./backend:/usr/src/app
+    command: npm run dev
+    depends_on:
+      - mongo
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: lostlink-frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app:cached
+      - /app/node_modules
+    # Load Auth0 configuration from the env file only (avoid blank overrides)
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      - backend
+    command:
+      - npx
+      - expo
+      - start
+      - --web
+      - --port
+      - "3000"
+      - --host
+      - "lan"
+
+
+
+volumes:
+  mongo-data: 

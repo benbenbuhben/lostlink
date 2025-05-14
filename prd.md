@@ -31,7 +31,7 @@ Provide a mobile-first lost & found system for organizations so users can quickl
 3. **View feed**  
    As a user, I want to browse a feed of recently found items sorted by date.  
 4. **Search & filter**  
-   As a user, I want to search by keyword (e.g. “wallet”) and filter by location so I can find relevant items quickly.  
+   As a user, I want to search by keyword (e.g. "wallet") and filter by location so I can find relevant items quickly.  
 5. **Claim item**  
    As a user, I want to submit a claim request on an item page so I can start the recovery process.  
 6. **Confirmation email**  
@@ -48,7 +48,7 @@ Provide a mobile-first lost & found system for organizations so users can quickl
   - Feed loads in under 1 s and supports infinite scroll (page size = 10)  
   - Search returns matching titles/descriptions in under 500 ms  
 - **Claim**  
-  - “Submit Claim” button disabled until user is logged in  
+  - "Submit Claim" button disabled until user is logged in  
   - Confirmation email arrives within 1 minute of submission  
 - **Responsive UI**  
   - Screens render correctly on both iOS and Android (via Expo)  
@@ -82,20 +82,30 @@ Provide a mobile-first lost & found system for organizations so users can quickl
   - Build & push backend Docker image (for later AWS or Heroku deploy)  
 
 ## 6. Milestones
-1. **Project setup**  
+1. **Project setup** – ✅ completed
    - Repo + `frontend/` & `backend/` folders  
    - `prd.md` + Docker Compose + `.env`  
-2. **Auth flow**  
+2. **Auth flow** – 🟡 frontend completed; backend token validation pending  
    - Integrate Auth0, signup/login screens & endpoints  
-3. **Report Found Item**  
+3. **Report Found Item** – 🔜 next up  
    - Backend `/items` POST + MinIO upload logic  
-   - “Report” screen in app  
-4. **Feed & Search**  
+   - "Report" screen in app  
+4. **Feed & Search** – ✅ initial feed live (pagination & infinite scroll); search UI pending  
    - Backend `/items` GET with query params  
    - Feed UI + search bar  
-5. **Claim functionality**  
+5. **Claim functionality** – 🔜 not started  
    - `/items/:id/claim` POST + SendGrid email  
    - Claim button & confirmation view  
-6. **Polish & Deploy**  
+6. **Polish & Deploy** – ⏳ later  
    - Styling, error handling, end-to-end testing  
    - Publish Expo build & deploy backend container
+
+## 7. Implementation Sprint Order
+1. Wire router + tabs.
+   * Delete placeholder `explore.tsx` and rename the existing `index.tsx` tab to **Feed**.
+   * Update `(tabs)/_layout.tsx` to declare the four production tabs:
+     - `index`  → title **Feed** (house icon)
+     - `report` → title **Report** (camera-plus or plus-circle icon)
+     - `search` → title **Search** (magnifying glass icon)
+     - `profile` (optional) → title **Profile** (person icon)
+   * Verify the bottom bar now reflects the LostLink IA (information architecture) before building new screens.
