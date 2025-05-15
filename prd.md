@@ -62,7 +62,7 @@ Provide a mobile-first lost & found system for organizations so users can quickl
   - `minio` (S3-compatible storage)  
   - `mongo-express` (web-based MongoDB admin UI)  
 - **Env vars** via `.env` in project root  
-- **Frontend**: Expo CLI running on host machine, pointing API calls to `http://localhost:3000`
+- **Frontend**: Expo CLI running on host machine (Metro on 19001), pointing API calls to `http://localhost:5001`
 
 ### Production
 - **Database**: MongoDB Atlas  

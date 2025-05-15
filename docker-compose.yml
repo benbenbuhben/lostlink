@@ -64,30 +64,29 @@ services:
       - minio
 
   frontend:
+    # Optional: containerised **web** build of the Expo app.
+    #
+    # Normal local development workflow:
+    #   • Run `docker compose up -d` to start backend + DB only (this service is skipped).
+    #   • In another terminal `cd frontend && npx expo start --host lan -p 19001`.
+    #
+    # CI / Production web deployment:
+    #   • Build with profile "build-web":
+    #       docker compose --profile build-web build frontend
+    #   • The resulting image serves the static web export via Nginx.
+    profiles:
+      - build-web
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-    container_name: lostlink-frontend
-    restart: always
+      dockerfile: Dockerfile.web   # multi-stage: node (expo export) → nginx
+    container_name: lostlink-frontend-web
     ports:
-      - "3000:3000"
+      - "3000:80"                 # serves static site on host:3000 when profile is active
     volumes:
       - ./frontend:/app:cached
       - /app/node_modules
-    # Load Auth0 configuration from the env file only (avoid blank overrides)
-    env_file:
-      - ./frontend/.env
     depends_on:
       - backend
-    command:
-      - npx
-      - expo
-      - start
-      - --web
-      - --port
-      - "3000"
-      - --host
-      - "lan"
 
 volumes:
   mongo-data:

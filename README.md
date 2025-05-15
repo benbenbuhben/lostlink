@@ -15,28 +15,33 @@ This repository contains a full-stack MVP built with:
 
 ---
 
-## 1 – Quick Start (Docker Compose)
+## 1 – Quick Start (Docker + Local Expo)
 
 ```bash
 # Clone & enter the repo
  git clone <repo-url> && cd lostlink
 
-# Build the images & start all services
- docker compose up --build
+# 1. Start backend + DB services only (frontend is skipped by default)
+ docker compose up -d
+
+# 2. In another terminal run the mobile/web app locally
+ cd frontend && npm install   # first time only
+ npx expo start --host lan -p 19001 --web  # Metro + DevTools + web preview
 ```
 
-Services launched:
+Services launched by Docker:
 
 | Service            | Port | Notes                                    |
 |--------------------|------|------------------------------------------|
 | **backend**        | 5001 | API (Express) – hot-reload via nodemon   |
-| **frontend**       | 3000 | Expo CLI (web + QR for native)           |
 | **mongo**          | 27017| Persistent volume `mongo-data`           |
 | **mongo-express**  | 8081 | Web UI (admin / pass123)                 |
+| **minio**          | 9000 | S3-compatible storage + console on 9001  |
+| *(optional)* **frontend-web** | 3000 | Only when running `--profile build-web` |
 
-> Expo will print a QR code; scan using the Expo Go app on iOS / Android or open `http://localhost:3000` for the web preview.
+> Expo will open DevTools in your browser and print `exp://<LAN-IP>:19001`. Scan it with Expo Go or open `http://localhost:19001` for the web preview.
 
-Stop everything with `Ctrl-C` or in another terminal:
+Stop Docker services with:
 
 ```bash
 docker compose down
@@ -44,56 +49,37 @@ docker compose down
 
 ---
 
-### Updating frontend dependencies (Docker)
+### Building the static web image (CI / prod)
 
-When you add a new npm package to **`frontend/`** you also need to refresh the anonymous
-`/app/node_modules` volume attached to the `frontend` service.  If you forget, the
-container will restart continuously with an error like:
+To produce a container that serves the Expo Web export:
 
-```
-CommandError: "<package>" is added as a dependency in your project's package.json but it doesn't seem to be installed.
-```
-
-Two quick ways to resolve it:
-
-**A. One-off install (recommended for small changes)**
 ```bash
-# inside the repo root
-docker compose run --rm frontend npm install            # installs into the volume
-docker compose restart frontend                         # pick up the new deps
+# builds multi-stage Dockerfile.web and tags lostlink-frontend-web
+docker compose --profile build-web build frontend
 ```
 
-**B. Rebuild from scratch (when many deps changed)**
+Run it locally with:
+
 ```bash
-# Stop & remove the old container
-docker compose stop frontend
-
-# Remove the stale /app/node_modules volume
-VOLUME_ID=$(docker inspect lostlink-frontend --format '{{ range .Mounts }}{{ if eq .Destination "/app/node_modules" }}{{ .Name }}{{ end }}{{ end }}')
-docker volume rm $VOLUME_ID
-
-# Rebuild & start
-docker compose build --no-cache frontend
-docker compose up -d frontend
+docker compose --profile build-web up frontend
+# → web available at http://localhost:3000
 ```
-
-Either method will restart the Expo dev server with the updated packages.
 
 ---
 
-## 2 – Local Development Without Docker
+## 2 – Local Development Without Docker (alt)
 
-Useful if you need native debugging or faster FS watching:
+If you prefer to run everything natively:
 
 ```bash
-# 1. Start Mongo locally (or use Atlas)
- brew services start mongodb-community
+# Start Mongo locally (or use Atlas)
+brew services start mongodb-community
 
-# 2. Backend
- cd backend && npm install && npm run dev
+# Backend
+cd backend && npm install && npm run dev  # listens on 5001
 
-# 3. Frontend
- cd ../frontend && npm install && expo start
+# Frontend
+cd ../frontend && npm install && npx expo start --host lan -p 19001 --web
 ```
 
 Set `EXPO_PUBLIC_API_URL=http://localhost:5001` in `frontend/.env` so the app hits the local API.
