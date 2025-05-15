@@ -1,4 +1,5 @@
 import Item from '../models/Item.js';
+import uploadToS3 from '../utils/uploadToS3.js';
 
 // GET /items
 export async function getItems(req, res, next) {
@@ -40,10 +41,21 @@ export async function getItems(req, res, next) {
 // POST /items
 export async function createItem(req, res, next) {
   try {
-    const { title, description, location, imageUrl } = req.body;
+    const { title, description, location } = req.body;
 
     if (!title || !location) {
       return res.status(400).json({ message: 'Title and location are required.' });
+    }
+
+    let imageUrl;
+    if (req.file) {
+      try {
+        const { url } = await uploadToS3(req.file);
+        imageUrl = url;
+      } catch (uploadErr) {
+        console.error('Failed to upload to S3', uploadErr);
+        return res.status(500).json({ message: 'Image upload failed' });
+      }
     }
 
     const item = new Item({

@@ -1,6 +1,7 @@
 # LostLink MVP Road-map
 
 > Date created: {{DATE}}
+> Last updated: {{TODAY}}
 
 ## 1. High-level App Structure
 
@@ -65,7 +66,7 @@
 - [x] Wire router + tabs.
 - [~] Auth flow & AuthContext. _(frontend complete; backend token validation pending)_
 - [x] Feed list (mock → API).
-- [ ] Report form (photo upload stub).
+- [x] Report form (photo upload via MinIO).
 - [ ] Item detail & claim POST.
 - [ ] Search / filter UI.
 - [ ] WebSocket real-time updates.

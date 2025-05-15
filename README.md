@@ -44,6 +44,43 @@ docker compose down
 
 ---
 
+### Updating frontend dependencies (Docker)
+
+When you add a new npm package to **`frontend/`** you also need to refresh the anonymous
+`/app/node_modules` volume attached to the `frontend` service.  If you forget, the
+container will restart continuously with an error like:
+
+```
+CommandError: "<package>" is added as a dependency in your project's package.json but it doesn't seem to be installed.
+```
+
+Two quick ways to resolve it:
+
+**A. One-off install (recommended for small changes)**
+```bash
+# inside the repo root
+docker compose run --rm frontend npm install            # installs into the volume
+docker compose restart frontend                         # pick up the new deps
+```
+
+**B. Rebuild from scratch (when many deps changed)**
+```bash
+# Stop & remove the old container
+docker compose stop frontend
+
+# Remove the stale /app/node_modules volume
+VOLUME_ID=$(docker inspect lostlink-frontend --format '{{ range .Mounts }}{{ if eq .Destination "/app/node_modules" }}{{ .Name }}{{ end }}{{ end }}')
+docker volume rm $VOLUME_ID
+
+# Rebuild & start
+docker compose build --no-cache frontend
+docker compose up -d frontend
+```
+
+Either method will restart the Expo dev server with the updated packages.
+
+---
+
 ## 2 – Local Development Without Docker
 
 Useful if you need native debugging or faster FS watching:

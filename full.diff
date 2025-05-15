@@ -1,0 +1,1144 @@
+diff --git a/README.md b/README.md
+index c2ec5f1..164e2df 100644
+--- a/README.md
++++ b/README.md
+@@ -44,6 +44,43 @@ docker compose down
+ 
+ ---
+ 
++### Updating frontend dependencies (Docker)
++
++When you add a new npm package to **`frontend/`** you also need to refresh the anonymous
++`/app/node_modules` volume attached to the `frontend` service.  If you forget, the
++container will restart continuously with an error like:
++
++```
++CommandError: "<package>" is added as a dependency in your project's package.json but it doesn't seem to be installed.
++```
++
++Two quick ways to resolve it:
++
++**A. One-off install (recommended for small changes)**
++```bash
++# inside the repo root
++docker compose run --rm frontend npm install            # installs into the volume
++docker compose restart frontend                         # pick up the new deps
++```
++
++**B. Rebuild from scratch (when many deps changed)**
++```bash
++# Stop & remove the old container
++docker compose stop frontend
++
++# Remove the stale /app/node_modules volume
++VOLUME_ID=$(docker inspect lostlink-frontend --format '{{ range .Mounts }}{{ if eq .Destination "/app/node_modules" }}{{ .Name }}{{ end }}{{ end }}')
++docker volume rm $VOLUME_ID
++
++# Rebuild & start
++docker compose build --no-cache frontend
++docker compose up -d frontend
++```
++
++Either method will restart the Expo dev server with the updated packages.
++
++---
++
+ ## 2 – Local Development Without Docker
+ 
+ Useful if you need native debugging or faster FS watching:
+diff --git a/backend/package.json b/backend/package.json
+index 4f0623e..207ef8c 100644
+--- a/backend/package.json
++++ b/backend/package.json
+@@ -19,7 +19,10 @@
+     "express": "^5.1.0",
+     "mongoose": "^7.8.0",
+     "morgan": "^1.10.0",
+-    "@faker-js/faker": "^8.3.0"
++    "@faker-js/faker": "^8.3.0",
++    "multer": "^1.4.5-lts.1",
++    "@aws-sdk/client-s3": "^3.515.0",
++    "uuid": "^9.0.1"
+   },
+   "devDependencies": {
+     "nodemon": "^2.0.22"
+diff --git a/backend/src/controllers/itemController.js b/backend/src/controllers/itemController.js
+index fce0c2d..c57e4fd 100644
+--- a/backend/src/controllers/itemController.js
++++ b/backend/src/controllers/itemController.js
+@@ -1,4 +1,5 @@
+ import Item from '../models/Item.js';
++import uploadToS3 from '../utils/uploadToS3.js';
+ 
+ // GET /items
+ export async function getItems(req, res, next) {
+@@ -40,12 +41,23 @@ export async function getItems(req, res, next) {
+ // POST /items
+ export async function createItem(req, res, next) {
+   try {
+-    const { title, description, location, imageUrl } = req.body;
++    const { title, description, location } = req.body;
+ 
+     if (!title || !location) {
+       return res.status(400).json({ message: 'Title and location are required.' });
+     }
+ 
++    let imageUrl;
++    if (req.file) {
++      try {
++        const { url } = await uploadToS3(req.file);
++        imageUrl = url;
++      } catch (uploadErr) {
++        console.error('Failed to upload to S3', uploadErr);
++        return res.status(500).json({ message: 'Image upload failed' });
++      }
++    }
++
+     const item = new Item({
+       title,
+       description,
+diff --git a/backend/src/routes/itemRoutes.js b/backend/src/routes/itemRoutes.js
+index d6fc518..db11163 100644
+--- a/backend/src/routes/itemRoutes.js
++++ b/backend/src/routes/itemRoutes.js
+@@ -1,11 +1,12 @@
+ import express from 'express';
+ import { getItems, createItem, getItemById } from '../controllers/itemController.js';
+ import { createClaim } from '../controllers/claimController.js';
++import upload from '../middleware/upload.js';
+ 
+ const router = express.Router();
+ 
+ router.get('/', getItems);
+-router.post('/', createItem);
++router.post('/', upload.single('image'), createItem);
+ 
+ router.get('/:id', getItemById);
+ router.post('/:id/claim', createClaim);
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 24b55b0..8348063 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -23,6 +23,23 @@ services:
+     depends_on:
+       - mongo
+ 
++  # --- MinIO (S3-compatible storage) ----------------------------------
++  minio:
++    image: minio/minio
++    container_name: lostlink-minio
++    restart: always
++    command: server /data --console-address ":9001"
++    ports:
++      - "9000:9000"   # S3 API
++      - "9001:9001"   # Web console
++    environment:
++      - MINIO_ROOT_USER=minioadmin
++      - MINIO_ROOT_PASSWORD=minioadmin
++    volumes:
++      - minio-data:/data
++    depends_on:
++      - mongo
++
+   backend:
+     build:
+       context: ./backend
+@@ -33,11 +50,18 @@ services:
+       - "5001:5000"
+     environment:
+       - MONGO_URI=mongodb://mongo:27017/lostlink
++      # MinIO / S3 config (dev)
++      - MINIO_ENDPOINT=http://minio:9000
++      - MINIO_ACCESS_KEY=minioadmin
++      - MINIO_SECRET_KEY=minioadmin
++      - MINIO_BUCKET_NAME=lostlink-dev
++      - MINIO_PUBLIC_URL=http://localhost:9000
+     volumes:
+       - ./backend:/usr/src/app
+     command: npm run dev
+     depends_on:
+       - mongo
++      - minio
+ 
+   frontend:
+     build:
+@@ -65,7 +89,6 @@ services:
+       - --host
+       - "lan"
+ 
+-
+-
+ volumes:
+-  mongo-data: 
+\ No newline at end of file
++  mongo-data:
++  minio-data: 
+\ No newline at end of file
+diff --git a/frontend/app/(tabs)/report.tsx b/frontend/app/(tabs)/report.tsx
+index a220847..6caa883 100644
+--- a/frontend/app/(tabs)/report.tsx
++++ b/frontend/app/(tabs)/report.tsx
+@@ -1,16 +1,148 @@
+ import * as React from 'react';
+-import { View, StyleSheet } from 'react-native';
+-import { Text } from 'react-native-paper';
++import { View, StyleSheet, Image, Platform, Alert } from 'react-native';
++import { Text, TextInput, Button, Snackbar } from 'react-native-paper';
++import * as ImagePicker from 'expo-image-picker';
++import Constants from 'expo-constants';
+ import RequireAuth from '@/components/RequireAuth';
++import { useQueryClient } from '@tanstack/react-query';
++import { useRouter } from 'expo-router';
++
++function getApiUrl() {
++  const envUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:5001';
++  if (Platform.OS === 'web') return envUrl;
++
++  const debuggerHost = Constants.manifest?.debuggerHost?.split(':').shift();
++  if (debuggerHost && envUrl.includes('localhost')) {
++    return `http://${debuggerHost}:5001`;
++  }
++  return envUrl;
++}
+ 
+ function ReportScreen() {
++  const queryClient = useQueryClient();
++  const router = useRouter();
++  const [title, setTitle] = React.useState('');
++  const [location, setLocation] = React.useState('');
++  const [description, setDescription] = React.useState('');
++  const [image, setImage] = React.useState<ImagePicker.ImagePickerAsset | null>(null);
++  const [submitting, setSubmitting] = React.useState(false);
++  const [snackVisible, setSnackVisible] = React.useState(false);
++
++  async function pickImage() {
++    if (submitting) return;
++    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
++    if (!permissionResult.granted) {
++      Alert.alert('Permission required', 'Camera roll permission is needed to select images.');
++      return;
++    }
++    const result = await ImagePicker.launchImageLibraryAsync({
++      mediaTypes: ImagePicker.MediaTypeOptions.Images,
++      quality: 0.8,
++    });
++    if (!result.canceled) {
++      setImage(result.assets[0]);
++    }
++  }
++
++  async function handleSubmit() {
++    if (!title || !location) {
++      Alert.alert('Validation', 'Title and location are required.');
++      return;
++    }
++    if (!image) {
++      Alert.alert('Validation', 'Please select an image.');
++      return;
++    }
++
++    setSubmitting(true);
++    try {
++      const formData = new FormData();
++      formData.append('title', title);
++      formData.append('location', location);
++      formData.append('description', description);
++      if (Platform.OS === 'web') {
++        // Expo web: use the actual File object
++        // @ts-ignore
++        formData.append('image', (image as any).file);
++      } else {
++        formData.append('image', {
++          uri: image.uri,
++          name: image.fileName ?? `photo.${image.uri.split('.').pop()}`,
++          type: image.mimeType ?? 'image/jpeg',
++        } as any);
++      }
++
++      const res = await fetch(`${getApiUrl()}/items`, {
++        method: 'POST',
++        body: formData,
++      });
++
++      if (!res.ok) {
++        throw new Error('Failed to submit item');
++      }
++      setTitle('');
++      setLocation('');
++      setDescription('');
++      setImage(null);
++
++      queryClient.invalidateQueries({ queryKey: ['items'] });
++
++      setSnackVisible(true);
++    } catch (err) {
++      console.error(err);
++      Alert.alert('Error', 'There was an error submitting the item.');
++    } finally {
++      setSubmitting(false);
++    }
++  }
++
+   return (
+     <RequireAuth>
+       <View style={styles.container}>
+-        <Text variant="headlineMedium">Report Found Item</Text>
+-        <Text variant="bodyMedium" style={styles.subtitle}>
+-          This screen will let you submit a new lost &amp; found item.
++        <Text variant="headlineMedium" style={styles.heading}>
++          Report Found Item
+         </Text>
++        <Button mode="outlined" onPress={pickImage} style={styles.imagePicker}>
++          {image ? 'Change Photo' : 'Choose Photo'}
++        </Button>
++        {image && <Image source={{ uri: image.uri }} style={styles.preview} />}
++        <TextInput
++          label="Title*"
++          value={title}
++          onChangeText={setTitle}
++          style={styles.input}
++        />
++        <TextInput
++          label="Location*"
++          value={location}
++          onChangeText={setLocation}
++          style={styles.input}
++        />
++        <TextInput
++          label="Description"
++          multiline
++          numberOfLines={3}
++          value={description}
++          onChangeText={setDescription}
++          style={styles.input}
++        />
++        <Button
++          mode="contained"
++          onPress={handleSubmit}
++          loading={submitting}
++          disabled={submitting}
++          style={styles.submit}
++        >
++          Submit
++        </Button>
++        <Snackbar
++          visible={snackVisible}
++          onDismiss={() => setSnackVisible(false)}
++          duration={4000}
++          action={{ label: 'Feed', onPress: () => router.push('/') }}
++        >
++          Item posted!
++        </Snackbar>
+       </View>
+     </RequireAuth>
+   );
+@@ -19,14 +151,26 @@ function ReportScreen() {
+ const styles = StyleSheet.create({
+   container: {
+     flex: 1,
+-    justifyContent: 'center',
+-    alignItems: 'center',
+     padding: 24,
+   },
+-  subtitle: {
+-    textAlign: 'center',
++  heading: {
++    marginBottom: 16,
++  },
++  imagePicker: {
++    marginBottom: 16,
++  },
++  preview: {
++    width: '100%',
++    height: 200,
++    resizeMode: 'cover',
++    borderRadius: 8,
++    marginBottom: 16,
++  },
++  input: {
++    marginBottom: 16,
++  },
++  submit: {
+     marginTop: 8,
+-    color: '#666',
+   },
+ });
+ 
+diff --git a/frontend/package.json b/frontend/package.json
+index d3155c0..c41415d 100644
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -18,21 +18,24 @@
+     "@expo/vector-icons": "^14.0.2",
+     "@react-navigation/bottom-tabs": "^7.2.0",
+     "@react-navigation/native": "^7.0.14",
++    "@tanstack/react-query": "^5.22.0",
++    "@tanstack/react-query-devtools": "^5.22.0",
+     "expo": "~52.0.46",
+     "expo-auth-session": "~6.0.3",
+     "expo-blur": "~14.0.3",
+     "expo-constants": "~17.0.8",
+     "expo-font": "~13.0.4",
+     "expo-haptics": "~14.0.1",
++    "expo-image-picker": "~16.0.6",
+     "expo-linking": "~7.0.5",
+     "expo-random": "^14.0.1",
+     "expo-router": "~4.0.20",
++    "expo-secure-store": "~12.0.0",
+     "expo-splash-screen": "~0.29.24",
+     "expo-status-bar": "~2.0.1",
+     "expo-symbols": "~0.2.2",
+     "expo-system-ui": "~4.0.9",
+     "expo-web-browser": "~14.0.2",
+-    "expo-secure-store": "~12.0.0",
+     "react": "18.3.1",
+     "react-dom": "18.3.1",
+     "react-native": "0.76.9",
+@@ -42,9 +45,7 @@
+     "react-native-safe-area-context": "4.12.0",
+     "react-native-screens": "~4.4.0",
+     "react-native-web": "~0.19.13",
+-    "react-native-webview": "13.12.5",
+-    "@tanstack/react-query": "^5.22.0",
+-    "@tanstack/react-query-devtools": "^5.22.0"
++    "react-native-webview": "13.12.5"
+   },
+   "devDependencies": {
+     "@babel/core": "^7.25.2",
+@@ -57,4 +58,4 @@
+     "typescript": "^5.3.3"
+   },
+   "private": true
+-}
+\ No newline at end of file
++}
+diff --git a/roadmap.md b/roadmap.md
+index 5fd1b4b..0a9fae6 100644
+--- a/roadmap.md
++++ b/roadmap.md
+@@ -1,6 +1,7 @@
+ # LostLink MVP Road-map
+ 
+ > Date created: {{DATE}}
++> Last updated: {{TODAY}}
+ 
+ ## 1. High-level App Structure
+ 
+@@ -65,7 +66,7 @@
+ - [x] Wire router + tabs.
+ - [~] Auth flow & AuthContext. _(frontend complete; backend token validation pending)_
+ - [x] Feed list (mock → API).
+-- [ ] Report form (photo upload stub).
++- [x] Report form (photo upload via MinIO).
+ - [ ] Item detail & claim POST.
+ - [ ] Search / filter UI.
+ - [ ] WebSocket real-time updates.
+diff --git a/tasks.md b/tasks.md
+index 9641139..b213570 100644
+--- a/tasks.md
++++ b/tasks.md
+@@ -14,12 +14,12 @@
+ - [ ] 2.4 Display clear auth-related error messages.
+ 
+ ## 3. Report Found Item
+-- [ ] 3.1 Design and implement the *Report* form in the frontend.
+-- [ ] 3.2 Validate required fields (photo, title, location).
++- [x] 3.1 Design and implement the *Report* form in the frontend.
++- [x] 3.2 Validate required fields (photo, title, location).
+ - [x] 3.3 Create backend `POST /items` endpoint (basic implementation in `itemController.createItem`).
+-- [ ] 3.4 Integrate MinIO (S3-compatible) for photo uploads.
+-- [ ] 3.5 Persist uploaded item metadata in MongoDB.
+-- [ ] 3.6 Optimistically prepend new item to Feed after submission.
++- [x] 3.4 Integrate MinIO (S3-compatible) for photo uploads.
++- [x] 3.5 Persist uploaded item metadata in MongoDB.
++- [~] 3.6 Optimistically prepend new item to Feed after submission.  _Currently triggers query invalidation; true optimistic prepend still TODO._
+ 
+ ## 4. Feed & Search
+ - [x] 4.1 Scrollable Feed UI in the frontend (React Native + React Query).
+diff --git a/backend/src/config/minioClient.js b/backend/src/config/minioClient.js
+new file mode 100644
+index 0000000..2096521
+--- /dev/null
++++ b/backend/src/config/minioClient.js
+@@ -0,0 +1,13 @@
++import { S3Client } from '@aws-sdk/client-s3';
++
++const s3Client = new S3Client({
++  region: process.env.MINIO_REGION || 'us-east-1',
++  endpoint: process.env.MINIO_ENDPOINT, // e.g. http://minio:9000
++  forcePathStyle: true, // needed for MinIO / localstack
++  credentials: {
++    accessKeyId: process.env.MINIO_ACCESS_KEY,
++    secretAccessKey: process.env.MINIO_SECRET_KEY,
++  },
++});
++
++export default s3Client; 
+\ No newline at end of file
+diff --git a/backend/src/middleware/upload.js b/backend/src/middleware/upload.js
+new file mode 100644
+index 0000000..f16bb38
+--- /dev/null
++++ b/backend/src/middleware/upload.js
+@@ -0,0 +1,13 @@
++import multer from 'multer';
++
++// Store file in memory so we can stream directly to S3
++const storage = multer.memoryStorage();
++
++const upload = multer({
++  storage,
++  limits: {
++    fileSize: 5 * 1024 * 1024, // 5MB limit
++  },
++});
++
++export default upload; 
+\ No newline at end of file
+diff --git a/backend/src/utils/uploadToS3.js b/backend/src/utils/uploadToS3.js
+new file mode 100644
+index 0000000..3f96a85
+--- /dev/null
++++ b/backend/src/utils/uploadToS3.js
+@@ -0,0 +1,61 @@
++import { PutObjectCommand, HeadBucketCommand, CreateBucketCommand, PutBucketPolicyCommand } from '@aws-sdk/client-s3';
++import { v4 as uuidv4 } from 'uuid';
++import s3Client from '../config/minioClient.js';
++
++export default async function uploadToS3(file) {
++  // file: { buffer, originalname, mimetype }
++  const bucket = process.env.MINIO_BUCKET_NAME;
++  if (!bucket) {
++    throw new Error('MINIO_BUCKET_NAME not set');
++  }
++
++  const ext = file.originalname.split('.').pop();
++  const key = `${uuidv4()}.${ext}`;
++
++  const policy = {
++    Version: '2012-10-17',
++    Statement: [
++      {
++        Sid: 'PublicReadGetObject',
++        Effect: 'Allow',
++        Principal: '*',
++        Action: ['s3:GetObject'],
++        Resource: [`arn:aws:s3:::${bucket}/*`],
++      },
++    ],
++  };
++
++  try {
++    await s3Client.send(new HeadBucketCommand({ Bucket: bucket }));
++  } catch (err) {
++    if (err?.$metadata?.httpStatusCode === 404 || err.Code === 'NotFound' || err.Code === 'NoSuchBucket') {
++      console.log(`Bucket ${bucket} does not exist – creating...`);
++      await s3Client.send(new CreateBucketCommand({ Bucket: bucket }));
++    } else {
++      throw err;
++    }
++  }
++
++  // Apply (or re-apply) public-read policy
++  try {
++    await s3Client.send(
++      new PutBucketPolicyCommand({ Bucket: bucket, Policy: JSON.stringify(policy) }),
++    );
++  } catch (policyErr) {
++    console.warn(`Could not set bucket policy (may already exist):`, policyErr?.Code || policyErr);
++  }
++
++  const cmd = new PutObjectCommand({
++    Bucket: bucket,
++    Key: key,
++    Body: file.buffer,
++    ContentType: file.mimetype,
++  });
++
++  await s3Client.send(cmd);
++  console.log(`File uploaded to ${bucket}/${key}`);
++
++  const baseUrl = process.env.MINIO_PUBLIC_URL || process.env.MINIO_ENDPOINT;
++  const publicUrl = `${baseUrl.replace(/\/$/, '')}/${bucket}/${key}`;
++  return { key, url: publicUrl };
++} 
+\ No newline at end of file
+diff --git a/blackberry.jpg b/blackberry.jpg
+new file mode 100644
+index 0000000..ba075fe
+Binary files /dev/null and b/blackberry.jpg differ
+diff --git a/full.diff b/full.diff
+new file mode 100644
+index 0000000..69e1d8e
+--- /dev/null
++++ b/full.diff
+@@ -0,0 +1,569 @@
++diff --git a/README.md b/README.md
++index c2ec5f1..164e2df 100644
++--- a/README.md
+++++ b/README.md
++@@ -44,6 +44,43 @@ docker compose down
++ 
++ ---
++ 
+++### Updating frontend dependencies (Docker)
+++
+++When you add a new npm package to **`frontend/`** you also need to refresh the anonymous
+++`/app/node_modules` volume attached to the `frontend` service.  If you forget, the
+++container will restart continuously with an error like:
+++
+++```
+++CommandError: "<package>" is added as a dependency in your project's package.json but it doesn't seem to be installed.
+++```
+++
+++Two quick ways to resolve it:
+++
+++**A. One-off install (recommended for small changes)**
+++```bash
+++# inside the repo root
+++docker compose run --rm frontend npm install            # installs into the volume
+++docker compose restart frontend                         # pick up the new deps
+++```
+++
+++**B. Rebuild from scratch (when many deps changed)**
+++```bash
+++# Stop & remove the old container
+++docker compose stop frontend
+++
+++# Remove the stale /app/node_modules volume
+++VOLUME_ID=$(docker inspect lostlink-frontend --format '{{ range .Mounts }}{{ if eq .Destination "/app/node_modules" }}{{ .Name }}{{ end }}{{ end }}')
+++docker volume rm $VOLUME_ID
+++
+++# Rebuild & start
+++docker compose build --no-cache frontend
+++docker compose up -d frontend
+++```
+++
+++Either method will restart the Expo dev server with the updated packages.
+++
+++---
+++
++ ## 2 – Local Development Without Docker
++ 
++ Useful if you need native debugging or faster FS watching:
++diff --git a/backend/package.json b/backend/package.json
++index 4f0623e..207ef8c 100644
++--- a/backend/package.json
+++++ b/backend/package.json
++@@ -19,7 +19,10 @@
++     "express": "^5.1.0",
++     "mongoose": "^7.8.0",
++     "morgan": "^1.10.0",
++-    "@faker-js/faker": "^8.3.0"
+++    "@faker-js/faker": "^8.3.0",
+++    "multer": "^1.4.5-lts.1",
+++    "@aws-sdk/client-s3": "^3.515.0",
+++    "uuid": "^9.0.1"
++   },
++   "devDependencies": {
++     "nodemon": "^2.0.22"
++diff --git a/backend/src/controllers/itemController.js b/backend/src/controllers/itemController.js
++index fce0c2d..c57e4fd 100644
++--- a/backend/src/controllers/itemController.js
+++++ b/backend/src/controllers/itemController.js
++@@ -1,4 +1,5 @@
++ import Item from '../models/Item.js';
+++import uploadToS3 from '../utils/uploadToS3.js';
++ 
++ // GET /items
++ export async function getItems(req, res, next) {
++@@ -40,12 +41,23 @@ export async function getItems(req, res, next) {
++ // POST /items
++ export async function createItem(req, res, next) {
++   try {
++-    const { title, description, location, imageUrl } = req.body;
+++    const { title, description, location } = req.body;
++ 
++     if (!title || !location) {
++       return res.status(400).json({ message: 'Title and location are required.' });
++     }
++ 
+++    let imageUrl;
+++    if (req.file) {
+++      try {
+++        const { url } = await uploadToS3(req.file);
+++        imageUrl = url;
+++      } catch (uploadErr) {
+++        console.error('Failed to upload to S3', uploadErr);
+++        return res.status(500).json({ message: 'Image upload failed' });
+++      }
+++    }
+++
++     const item = new Item({
++       title,
++       description,
++diff --git a/backend/src/routes/itemRoutes.js b/backend/src/routes/itemRoutes.js
++index d6fc518..db11163 100644
++--- a/backend/src/routes/itemRoutes.js
+++++ b/backend/src/routes/itemRoutes.js
++@@ -1,11 +1,12 @@
++ import express from 'express';
++ import { getItems, createItem, getItemById } from '../controllers/itemController.js';
++ import { createClaim } from '../controllers/claimController.js';
+++import upload from '../middleware/upload.js';
++ 
++ const router = express.Router();
++ 
++ router.get('/', getItems);
++-router.post('/', createItem);
+++router.post('/', upload.single('image'), createItem);
++ 
++ router.get('/:id', getItemById);
++ router.post('/:id/claim', createClaim);
++diff --git a/docker-compose.yml b/docker-compose.yml
++index 24b55b0..8348063 100644
++--- a/docker-compose.yml
+++++ b/docker-compose.yml
++@@ -23,6 +23,23 @@ services:
++     depends_on:
++       - mongo
++ 
+++  # --- MinIO (S3-compatible storage) ----------------------------------
+++  minio:
+++    image: minio/minio
+++    container_name: lostlink-minio
+++    restart: always
+++    command: server /data --console-address ":9001"
+++    ports:
+++      - "9000:9000"   # S3 API
+++      - "9001:9001"   # Web console
+++    environment:
+++      - MINIO_ROOT_USER=minioadmin
+++      - MINIO_ROOT_PASSWORD=minioadmin
+++    volumes:
+++      - minio-data:/data
+++    depends_on:
+++      - mongo
+++
++   backend:
++     build:
++       context: ./backend
++@@ -33,11 +50,18 @@ services:
++       - "5001:5000"
++     environment:
++       - MONGO_URI=mongodb://mongo:27017/lostlink
+++      # MinIO / S3 config (dev)
+++      - MINIO_ENDPOINT=http://minio:9000
+++      - MINIO_ACCESS_KEY=minioadmin
+++      - MINIO_SECRET_KEY=minioadmin
+++      - MINIO_BUCKET_NAME=lostlink-dev
+++      - MINIO_PUBLIC_URL=http://localhost:9000
++     volumes:
++       - ./backend:/usr/src/app
++     command: npm run dev
++     depends_on:
++       - mongo
+++      - minio
++ 
++   frontend:
++     build:
++@@ -65,7 +89,6 @@ services:
++       - --host
++       - "lan"
++ 
++-
++-
++ volumes:
++-  mongo-data: 
++\ No newline at end of file
+++  mongo-data:
+++  minio-data: 
++\ No newline at end of file
++diff --git a/frontend/app/(tabs)/report.tsx b/frontend/app/(tabs)/report.tsx
++index a220847..6caa883 100644
++--- a/frontend/app/(tabs)/report.tsx
+++++ b/frontend/app/(tabs)/report.tsx
++@@ -1,16 +1,148 @@
++ import * as React from 'react';
++-import { View, StyleSheet } from 'react-native';
++-import { Text } from 'react-native-paper';
+++import { View, StyleSheet, Image, Platform, Alert } from 'react-native';
+++import { Text, TextInput, Button, Snackbar } from 'react-native-paper';
+++import * as ImagePicker from 'expo-image-picker';
+++import Constants from 'expo-constants';
++ import RequireAuth from '@/components/RequireAuth';
+++import { useQueryClient } from '@tanstack/react-query';
+++import { useRouter } from 'expo-router';
+++
+++function getApiUrl() {
+++  const envUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:5001';
+++  if (Platform.OS === 'web') return envUrl;
+++
+++  const debuggerHost = Constants.manifest?.debuggerHost?.split(':').shift();
+++  if (debuggerHost && envUrl.includes('localhost')) {
+++    return `http://${debuggerHost}:5001`;
+++  }
+++  return envUrl;
+++}
++ 
++ function ReportScreen() {
+++  const queryClient = useQueryClient();
+++  const router = useRouter();
+++  const [title, setTitle] = React.useState('');
+++  const [location, setLocation] = React.useState('');
+++  const [description, setDescription] = React.useState('');
+++  const [image, setImage] = React.useState<ImagePicker.ImagePickerAsset | null>(null);
+++  const [submitting, setSubmitting] = React.useState(false);
+++  const [snackVisible, setSnackVisible] = React.useState(false);
+++
+++  async function pickImage() {
+++    if (submitting) return;
+++    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+++    if (!permissionResult.granted) {
+++      Alert.alert('Permission required', 'Camera roll permission is needed to select images.');
+++      return;
+++    }
+++    const result = await ImagePicker.launchImageLibraryAsync({
+++      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+++      quality: 0.8,
+++    });
+++    if (!result.canceled) {
+++      setImage(result.assets[0]);
+++    }
+++  }
+++
+++  async function handleSubmit() {
+++    if (!title || !location) {
+++      Alert.alert('Validation', 'Title and location are required.');
+++      return;
+++    }
+++    if (!image) {
+++      Alert.alert('Validation', 'Please select an image.');
+++      return;
+++    }
+++
+++    setSubmitting(true);
+++    try {
+++      const formData = new FormData();
+++      formData.append('title', title);
+++      formData.append('location', location);
+++      formData.append('description', description);
+++      if (Platform.OS === 'web') {
+++        // Expo web: use the actual File object
+++        // @ts-ignore
+++        formData.append('image', (image as any).file);
+++      } else {
+++        formData.append('image', {
+++          uri: image.uri,
+++          name: image.fileName ?? `photo.${image.uri.split('.').pop()}`,
+++          type: image.mimeType ?? 'image/jpeg',
+++        } as any);
+++      }
+++
+++      const res = await fetch(`${getApiUrl()}/items`, {
+++        method: 'POST',
+++        body: formData,
+++      });
+++
+++      if (!res.ok) {
+++        throw new Error('Failed to submit item');
+++      }
+++      setTitle('');
+++      setLocation('');
+++      setDescription('');
+++      setImage(null);
+++
+++      queryClient.invalidateQueries({ queryKey: ['items'] });
+++
+++      setSnackVisible(true);
+++    } catch (err) {
+++      console.error(err);
+++      Alert.alert('Error', 'There was an error submitting the item.');
+++    } finally {
+++      setSubmitting(false);
+++    }
+++  }
+++
++   return (
++     <RequireAuth>
++       <View style={styles.container}>
++-        <Text variant="headlineMedium">Report Found Item</Text>
++-        <Text variant="bodyMedium" style={styles.subtitle}>
++-          This screen will let you submit a new lost &amp; found item.
+++        <Text variant="headlineMedium" style={styles.heading}>
+++          Report Found Item
++         </Text>
+++        <Button mode="outlined" onPress={pickImage} style={styles.imagePicker}>
+++          {image ? 'Change Photo' : 'Choose Photo'}
+++        </Button>
+++        {image && <Image source={{ uri: image.uri }} style={styles.preview} />}
+++        <TextInput
+++          label="Title*"
+++          value={title}
+++          onChangeText={setTitle}
+++          style={styles.input}
+++        />
+++        <TextInput
+++          label="Location*"
+++          value={location}
+++          onChangeText={setLocation}
+++          style={styles.input}
+++        />
+++        <TextInput
+++          label="Description"
+++          multiline
+++          numberOfLines={3}
+++          value={description}
+++          onChangeText={setDescription}
+++          style={styles.input}
+++        />
+++        <Button
+++          mode="contained"
+++          onPress={handleSubmit}
+++          loading={submitting}
+++          disabled={submitting}
+++          style={styles.submit}
+++        >
+++          Submit
+++        </Button>
+++        <Snackbar
+++          visible={snackVisible}
+++          onDismiss={() => setSnackVisible(false)}
+++          duration={4000}
+++          action={{ label: 'Feed', onPress: () => router.push('/') }}
+++        >
+++          Item posted!
+++        </Snackbar>
++       </View>
++     </RequireAuth>
++   );
++@@ -19,14 +151,26 @@ function ReportScreen() {
++ const styles = StyleSheet.create({
++   container: {
++     flex: 1,
++-    justifyContent: 'center',
++-    alignItems: 'center',
++     padding: 24,
++   },
++-  subtitle: {
++-    textAlign: 'center',
+++  heading: {
+++    marginBottom: 16,
+++  },
+++  imagePicker: {
+++    marginBottom: 16,
+++  },
+++  preview: {
+++    width: '100%',
+++    height: 200,
+++    resizeMode: 'cover',
+++    borderRadius: 8,
+++    marginBottom: 16,
+++  },
+++  input: {
+++    marginBottom: 16,
+++  },
+++  submit: {
++     marginTop: 8,
++-    color: '#666',
++   },
++ });
++ 
++diff --git a/frontend/package.json b/frontend/package.json
++index d3155c0..c41415d 100644
++--- a/frontend/package.json
+++++ b/frontend/package.json
++@@ -18,21 +18,24 @@
++     "@expo/vector-icons": "^14.0.2",
++     "@react-navigation/bottom-tabs": "^7.2.0",
++     "@react-navigation/native": "^7.0.14",
+++    "@tanstack/react-query": "^5.22.0",
+++    "@tanstack/react-query-devtools": "^5.22.0",
++     "expo": "~52.0.46",
++     "expo-auth-session": "~6.0.3",
++     "expo-blur": "~14.0.3",
++     "expo-constants": "~17.0.8",
++     "expo-font": "~13.0.4",
++     "expo-haptics": "~14.0.1",
+++    "expo-image-picker": "~16.0.6",
++     "expo-linking": "~7.0.5",
++     "expo-random": "^14.0.1",
++     "expo-router": "~4.0.20",
+++    "expo-secure-store": "~12.0.0",
++     "expo-splash-screen": "~0.29.24",
++     "expo-status-bar": "~2.0.1",
++     "expo-symbols": "~0.2.2",
++     "expo-system-ui": "~4.0.9",
++     "expo-web-browser": "~14.0.2",
++-    "expo-secure-store": "~12.0.0",
++     "react": "18.3.1",
++     "react-dom": "18.3.1",
++     "react-native": "0.76.9",
++@@ -42,9 +45,7 @@
++     "react-native-safe-area-context": "4.12.0",
++     "react-native-screens": "~4.4.0",
++     "react-native-web": "~0.19.13",
++-    "react-native-webview": "13.12.5",
++-    "@tanstack/react-query": "^5.22.0",
++-    "@tanstack/react-query-devtools": "^5.22.0"
+++    "react-native-webview": "13.12.5"
++   },
++   "devDependencies": {
++     "@babel/core": "^7.25.2",
++@@ -57,4 +58,4 @@
++     "typescript": "^5.3.3"
++   },
++   "private": true
++-}
++\ No newline at end of file
+++}
++diff --git a/roadmap.md b/roadmap.md
++index 5fd1b4b..0a9fae6 100644
++--- a/roadmap.md
+++++ b/roadmap.md
++@@ -1,6 +1,7 @@
++ # LostLink MVP Road-map
++ 
++ > Date created: {{DATE}}
+++> Last updated: {{TODAY}}
++ 
++ ## 1. High-level App Structure
++ 
++@@ -65,7 +66,7 @@
++ - [x] Wire router + tabs.
++ - [~] Auth flow & AuthContext. _(frontend complete; backend token validation pending)_
++ - [x] Feed list (mock → API).
++-- [ ] Report form (photo upload stub).
+++- [x] Report form (photo upload via MinIO).
++ - [ ] Item detail & claim POST.
++ - [ ] Search / filter UI.
++ - [ ] WebSocket real-time updates.
++diff --git a/tasks.md b/tasks.md
++index 9641139..b213570 100644
++--- a/tasks.md
+++++ b/tasks.md
++@@ -14,12 +14,12 @@
++ - [ ] 2.4 Display clear auth-related error messages.
++ 
++ ## 3. Report Found Item
++-- [ ] 3.1 Design and implement the *Report* form in the frontend.
++-- [ ] 3.2 Validate required fields (photo, title, location).
+++- [x] 3.1 Design and implement the *Report* form in the frontend.
+++- [x] 3.2 Validate required fields (photo, title, location).
++ - [x] 3.3 Create backend `POST /items` endpoint (basic implementation in `itemController.createItem`).
++-- [ ] 3.4 Integrate MinIO (S3-compatible) for photo uploads.
++-- [ ] 3.5 Persist uploaded item metadata in MongoDB.
++-- [ ] 3.6 Optimistically prepend new item to Feed after submission.
+++- [x] 3.4 Integrate MinIO (S3-compatible) for photo uploads.
+++- [x] 3.5 Persist uploaded item metadata in MongoDB.
+++- [~] 3.6 Optimistically prepend new item to Feed after submission.  _Currently triggers query invalidation; true optimistic prepend still TODO._
++ 
++ ## 4. Feed & Search
++ - [x] 4.1 Scrollable Feed UI in the frontend (React Native + React Query).
++diff --git a/backend/src/config/minioClient.js b/backend/src/config/minioClient.js
++new file mode 100644
++index 0000000..2096521
++--- /dev/null
+++++ b/backend/src/config/minioClient.js
++@@ -0,0 +1,13 @@
+++import { S3Client } from '@aws-sdk/client-s3';
+++
+++const s3Client = new S3Client({
+++  region: process.env.MINIO_REGION || 'us-east-1',
+++  endpoint: process.env.MINIO_ENDPOINT, // e.g. http://minio:9000
+++  forcePathStyle: true, // needed for MinIO / localstack
+++  credentials: {
+++    accessKeyId: process.env.MINIO_ACCESS_KEY,
+++    secretAccessKey: process.env.MINIO_SECRET_KEY,
+++  },
+++});
+++
+++export default s3Client; 
++\ No newline at end of file
++diff --git a/backend/src/middleware/upload.js b/backend/src/middleware/upload.js
++new file mode 100644
++index 0000000..f16bb38
++--- /dev/null
+++++ b/backend/src/middleware/upload.js
++@@ -0,0 +1,13 @@
+++import multer from 'multer';
+++
+++// Store file in memory so we can stream directly to S3
+++const storage = multer.memoryStorage();
+++
+++const upload = multer({
+++  storage,
+++  limits: {
+++    fileSize: 5 * 1024 * 1024, // 5MB limit
+++  },
+++});
+++
+++export default upload; 
++\ No newline at end of file
++diff --git a/backend/src/utils/uploadToS3.js b/backend/src/utils/uploadToS3.js
++new file mode 100644
++index 0000000..3f96a85
++--- /dev/null
+++++ b/backend/src/utils/uploadToS3.js
++@@ -0,0 +1,61 @@
+++import { PutObjectCommand, HeadBucketCommand, CreateBucketCommand, PutBucketPolicyCommand } from '@aws-sdk/client-s3';
+++import { v4 as uuidv4 } from 'uuid';
+++import s3Client from '../config/minioClient.js';
+++
+++export default async function uploadToS3(file) {
+++  // file: { buffer, originalname, mimetype }
+++  const bucket = process.env.MINIO_BUCKET_NAME;
+++  if (!bucket) {
+++    throw new Error('MINIO_BUCKET_NAME not set');
+++  }
+++
+++  const ext = file.originalname.split('.').pop();
+++  const key = `${uuidv4()}.${ext}`;
+++
+++  const policy = {
+++    Version: '2012-10-17',
+++    Statement: [
+++      {
+++        Sid: 'PublicReadGetObject',
+++        Effect: 'Allow',
+++        Principal: '*',
+++        Action: ['s3:GetObject'],
+++        Resource: [`arn:aws:s3:::${bucket}/*`],
+++      },
+++    ],
+++  };
+++
+++  try {
+++    await s3Client.send(new HeadBucketCommand({ Bucket: bucket }));
+++  } catch (err) {
+++    if (err?.$metadata?.httpStatusCode === 404 || err.Code === 'NotFound' || err.Code === 'NoSuchBucket') {
+++      console.log(`Bucket ${bucket} does not exist – creating...`);
+++      await s3Client.send(new CreateBucketCommand({ Bucket: bucket }));
+++    } else {
+++      throw err;
+++    }
+++  }
+++
+++  // Apply (or re-apply) public-read policy
+++  try {
+++    await s3Client.send(
+++      new PutBucketPolicyCommand({ Bucket: bucket, Policy: JSON.stringify(policy) }),
+++    );
+++  } catch (policyErr) {
+++    console.warn(`Could not set bucket policy (may already exist):`, policyErr?.Code || policyErr);
+++  }
+++
+++  const cmd = new PutObjectCommand({
+++    Bucket: bucket,
+++    Key: key,
+++    Body: file.buffer,
+++    ContentType: file.mimetype,
+++  });
+++
+++  await s3Client.send(cmd);
+++  console.log(`File uploaded to ${bucket}/${key}`);
+++
+++  const baseUrl = process.env.MINIO_PUBLIC_URL || process.env.MINIO_ENDPOINT;
+++  const publicUrl = `${baseUrl.replace(/\/$/, '')}/${bucket}/${key}`;
+++  return { key, url: publicUrl };
+++} 
++\ No newline at end of file
++diff --git a/blackberry.jpg b/blackberry.jpg
++new file mode 100644
++index 0000000..ba075fe
++Binary files /dev/null and b/blackberry.jpg differ

@@ -23,6 +23,23 @@ services:
     depends_on:
       - mongo
 
+  # --- MinIO (S3-compatible storage) ----------------------------------
+  minio:
+    image: minio/minio
+    container_name: lostlink-minio
+    restart: always
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio-data:/data
+    depends_on:
+      - mongo
+
   backend:
     build:
       context: ./backend
@@ -33,11 +50,18 @@ services:
       - "5001:5000"
     environment:
       - MONGO_URI=mongodb://mongo:27017/lostlink
+      # MinIO / S3 config (dev)
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET_NAME=lostlink-dev
+      - MINIO_PUBLIC_URL=http://localhost:9000
     volumes:
       - ./backend:/usr/src/app
     command: npm run dev
     depends_on:
       - mongo
+      - minio
 
   frontend:
     build:
@@ -65,7 +89,6 @@ services:
       - --host
       - "lan"
 
-
-
 volumes:
-  mongo-data: 
+  mongo-data:
+  minio-data: 

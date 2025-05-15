@@ -14,12 +14,12 @@
 - [ ] 2.4 Display clear auth-related error messages.
 
 ## 3. Report Found Item
-- [ ] 3.1 Design and implement the *Report* form in the frontend.
-- [ ] 3.2 Validate required fields (photo, title, location).
+- [x] 3.1 Design and implement the *Report* form in the frontend.
+- [x] 3.2 Validate required fields (photo, title, location).
 - [x] 3.3 Create backend `POST /items` endpoint (basic implementation in `itemController.createItem`).
-- [ ] 3.4 Integrate MinIO (S3-compatible) for photo uploads.
-- [ ] 3.5 Persist uploaded item metadata in MongoDB.
-- [ ] 3.6 Optimistically prepend new item to Feed after submission.
+- [x] 3.4 Integrate MinIO (S3-compatible) for photo uploads.
+- [x] 3.5 Persist uploaded item metadata in MongoDB.
+- [~] 3.6 Optimistically prepend new item to Feed after submission.  _Currently triggers query invalidation; true optimistic prepend still TODO._
 
 ## 4. Feed & Search
 - [x] 4.1 Scrollable Feed UI in the frontend (React Native + React Query).
