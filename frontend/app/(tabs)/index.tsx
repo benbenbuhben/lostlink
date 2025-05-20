@@ -1,20 +1,55 @@
 import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { View, StyleSheet, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
 import { Appbar, Button, Card, Text } from 'react-native-paper';
 import { useAuth } from '@/context/AuthContext';
-import { useItems } from '@/hooks/useItems';
+import { useApi } from '../../hooks/useApi';
+
+interface Item {
+  _id: string;
+  title: string;
+  location: string;
+  description?: string;
+  imageUrl?: string;
+  createdAt: string;
+}
 
 function FeedScreen() {
   const { user, login, logout, ready } = useAuth();
-  const {
-    data,
-    isLoading,
-    error,
-    fetchNextPage,
-    hasNextPage,
-    refetch,
-    isFetchingNextPage,
-  } = useItems();
+  const { get } = useApi();
+  
+  const [items, setItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+
+  const fetchItems = async () => {
+    try {
+      setLoading(true);
+
+      const data = await get<Item[]>('/items');   // get에 타입 파라미터 지정
+      setItems(data);
+      setError(null);
+    } catch (err) {
+      console.error('Failed to fetch items:', err);
+      setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchItems();
+  };
+
+  useEffect(() => {
+    if (ready && user){
+      fetchItems();
+    }
+  }, [ready, user]);
 
   if (!ready) {
     return null; // Avoid flicker while restoring session
@@ -51,26 +86,24 @@ function FeedScreen() {
     );
   }
 
-  if (isLoading) {
+  if (loading && !refreshing) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" />
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0000ff" />
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
-        <Text>Error loading items. Please try again.</Text>
-        <Button mode="contained" onPress={() => refetch()} style={{ marginTop: 12 }}>
-          Retry
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 16 }]}>
+        <Text>문제가 발생했습니다: {error}</Text>
+        <Button mode="contained" onPress={fetchItems} style={{ marginTop: 12 }}>
+          다시 시도
         </Button>
       </View>
     );
   }
-
-  const items = data?.pages.flatMap((p) => p.data) ?? [];
 
   function renderItem({ item }: { item: any }) {
     return (
@@ -90,7 +123,7 @@ function FeedScreen() {
     <View style={styles.container}>
       <Appbar.Header>
         <Appbar.Content title="Feed" />
-        <Appbar.Action icon="refresh" onPress={() => refetch()} />
+        <Appbar.Action icon="refresh" onPress={fetchItems} />
         <Appbar.Action icon="logout" onPress={logout} />
       </Appbar.Header>
       <FlatList
@@ -98,11 +131,11 @@ function FeedScreen() {
         keyExtractor={(item) => item._id}
         renderItem={renderItem}
         contentContainerStyle={{ paddingVertical: 8 }}
-        onEndReached={() => hasNextPage && fetchNextPage()}
-        onEndReachedThreshold={0.2}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={() => refetch()} />}
-        ListFooterComponent={
-          isFetchingNextPage ? <ActivityIndicator style={{ marginVertical: 16 }} /> : null
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+          />
         }
       />
     </View>
@@ -141,6 +174,11 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     borderRadius: 8,
     minWidth: 160,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

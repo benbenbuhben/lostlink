@@ -10,8 +10,8 @@
 - [~] 2.1 Integrate Auth0 for user authentication in both frontend and backend.  
       _Frontend Auth0 login working via `AuthContext`; backend JWT middleware still pending._
 - [x] 2.2 Implement login screen / flow in the frontend.
-- [ ] 2.3 Create backend Auth endpoints / middleware.
-- [ ] 2.4 Display clear auth-related error messages.
+- [~] 2.3 Create backend Auth endpoints / middleware.
+- [x] 2.4 Display clear auth-related error messages.
 
 ## 3. Report Found Item
 - [x] 3.1 Design and implement the *Report* form in the frontend.
