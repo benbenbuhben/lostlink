@@ -56,6 +56,9 @@ services:
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET_NAME=lostlink-dev
       - MINIO_PUBLIC_URL=http://localhost:9000
+      # Auth0 config
+      - AUTH0_DOMAIN=dev-p3dnd83yc74l2dvq.us.auth0.com
+      - AUTH0_AUDIENCE=https://lostlink-api
     volumes:
       - ./backend:/usr/src/app
     command: npm run dev

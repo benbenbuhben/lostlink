@@ -1,9 +1,10 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
-import { View, StyleSheet, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
 import { Appbar, Button, Card, Text } from 'react-native-paper';
 import { useAuth } from '@/context/AuthContext';
 import { useApi } from '../../hooks/useApi';
+import { useRouter } from 'expo-router';
 
 interface Item {
   _id: string;
@@ -14,22 +15,45 @@ interface Item {
   createdAt: string;
 }
 
+interface ApiResponse {
+  data: Item[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    queryTime?: number;
+  };
+}
+
 function FeedScreen() {
   const { user, login, logout, ready } = useAuth();
   const { get } = useApi();
+  const router = useRouter();
   
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadTime, setLoadTime] = useState<number | null>(null);
 
-
-  const fetchItems = async () => {
+  const fetchItems = useCallback(async () => {
     try {
+      const startTime = Date.now();
       setLoading(true);
-
-      const data = await get<Item[]>('/items');   // get에 타입 파라미터 지정
-      setItems(data);
+      console.log('Fetching items from API...');
+      
+      // 캐시 최적화를 위해 limit을 늘림
+      const response = await get<ApiResponse>('/items?limit=20');
+      console.log('API response:', response);
+      
+      const endTime = Date.now();
+      const totalTime = endTime - startTime;
+      setLoadTime(totalTime);
+      
+      // 성능 로깅
+      console.log(`Feed loaded in ${totalTime}ms (Backend: ${response.pagination.queryTime || 'N/A'}ms)`);
+      
+      setItems(response.data || []);
       setError(null);
     } catch (err) {
       console.error('Failed to fetch items:', err);
@@ -38,18 +62,52 @@ function FeedScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [get]);
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     setRefreshing(true);
     fetchItems();
-  };
+  }, [fetchItems]);
+
+  // 메모이제이션된 렌더 함수
+  const renderItem = useCallback(({ item }: { item: Item }) => (
+    <TouchableOpacity onPress={() => router.push(`/item/${item._id}`)}>
+      <Card style={styles.itemCard}>
+        {item.imageUrl && (
+          <Card.Cover source={{ uri: item.imageUrl }} style={styles.itemImage} />
+        )}
+        <Card.Title title={item.title} subtitle={item.location} />
+        {item.description && (
+          <Card.Content>
+            <Text numberOfLines={2}>{item.description}</Text>
+          </Card.Content>
+        )}
+      </Card>
+    </TouchableOpacity>
+  ), [router]);
+
+  // 키 추출 함수 메모이제이션
+  const keyExtractor = useCallback((item: Item) => item._id, []);
+
+  // 성능 지표 표시 (개발 모드에서만)
+  const performanceInfo = useMemo(() => {
+    if (!loadTime || process.env.NODE_ENV === 'production') return null;
+    
+    const isGood = loadTime < 1000;
+    const color = isGood ? '#4CAF50' : loadTime < 2000 ? '#FF9800' : '#F44336';
+    
+    return (
+      <Text style={[styles.performanceText, { color }]}>
+        Load time: {loadTime}ms {isGood ? '✅' : '⚠️'}
+      </Text>
+    );
+  }, [loadTime]);
 
   useEffect(() => {
-    if (ready && user){
+    if (ready && user) {
       fetchItems();
     }
-  }, [ready, user]);
+  }, [ready, user, fetchItems]);
 
   if (!ready) {
     return null; // Avoid flicker while restoring session
@@ -90,6 +148,7 @@ function FeedScreen() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#0000ff" />
+        <Text style={styles.loadingText}>Loading items...</Text>
       </View>
     );
   }
@@ -105,38 +164,41 @@ function FeedScreen() {
     );
   }
 
-  function renderItem({ item }: { item: any }) {
-    return (
-      <Card style={{ marginHorizontal: 16, marginVertical: 8 }}>
-        {item.imageUrl ? <Card.Cover source={{ uri: item.imageUrl }} /> : null}
-        <Card.Title title={item.title} subtitle={item.location} />
-        {item.description ? (
-          <Card.Content>
-            <Text>{item.description}</Text>
-          </Card.Content>
-        ) : null}
-      </Card>
-    );
-  }
-
   return (
     <View style={styles.container}>
       <Appbar.Header>
-        <Appbar.Content title="Feed" />
+        <Appbar.Content title={`Feed (${items.length} items)`} />
+        {performanceInfo}
         <Appbar.Action icon="refresh" onPress={fetchItems} />
         <Appbar.Action icon="logout" onPress={logout} />
       </Appbar.Header>
       <FlatList
         data={items}
-        keyExtractor={(item) => item._id}
+        keyExtractor={keyExtractor}
         renderItem={renderItem}
-        contentContainerStyle={{ paddingVertical: 8 }}
+        contentContainerStyle={styles.listContainer}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
           />
         }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text>No items found. Try reporting a found item!</Text>
+          </View>
+        }
+        // 성능 최적화 props
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={50}
+        initialNumToRender={10}
+        windowSize={10}
+        getItemLayout={(data, index) => ({
+          length: 200, // 예상 아이템 높이
+          offset: 200 * index,
+          index,
+        })}
       />
     </View>
   );
@@ -179,6 +241,30 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#666',
+  },
+  itemCard: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+    elevation: 4,
+    borderRadius: 16,
+  },
+  itemImage: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  listContainer: {
+    paddingVertical: 8,
+  },
+  emptyContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  performanceText: {
+    marginRight: 12,
   },
 });
 

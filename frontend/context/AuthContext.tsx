@@ -75,43 +75,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /* ② 로그인 */
   const login = async () => {
     if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID) {
-      console.warn('Auth0 env missing');
+      console.warn('Auth0 환경변수 누락');
       return;
     }
-  
-    const redirectUri = Platform.OS === 'web'
-      ? `${window.location.origin}/callback`
-      : AuthSession.makeRedirectUri({ useProxy: true });
-    console.log('[redirectUri]', redirectUri);
-  
+
+    const redirectUri =
+      Platform.OS === 'web'
+        ? `${window.location.origin}`  // /callback 제거하고 루트 URL 사용
+        : AuthSession.makeRedirectUri();
+        
+    console.log('[Auth0 Domain]', AUTH0_DOMAIN);
+    console.log('[Auth0 Client ID]', AUTH0_CLIENT_ID);
+    console.log('[Platform]', Platform.OS);
+    console.log('[Redirect URI]', redirectUri);
+    console.log('[Current URL]', Platform.OS === 'web' ? window.location.href : 'N/A');
+
     const discovery = {
       authorizationEndpoint: `https://${AUTH0_DOMAIN}/authorize`,
       tokenEndpoint:         `https://${AUTH0_DOMAIN}/oauth/token`,
       userInfoEndpoint:      `https://${AUTH0_DOMAIN}/userinfo`,
     };
-  
+
     const req = await AuthSession.loadAsync(
       {
-        clientId:     AUTH0_CLIENT_ID,
-        scopes:       ['openid', 'profile', 'email'],
+        clientId: AUTH0_CLIENT_ID,
+        scopes: ['openid', 'profile', 'email'],
         redirectUri,
         responseType: AuthSession.ResponseType.Token,
-        extraParams:  AUDIENCE ? { audience: AUDIENCE } : undefined,
+        extraParams: AUDIENCE ? { audience: AUDIENCE } : undefined,
       },
       discovery
     );
-  
-    const res = await req.promptAsync();  // options 없이
+
+    console.log('[Auth Request]', req);
+
+    const res = await req.promptAsync({
+      useProxy: Platform.OS !== 'web',
+    } as any);
+
+    console.log('[Auth Response]', res);
+
     if (res.type !== 'success' || !res.params?.access_token) {
-      console.warn('Auth0 login canceled/failed', res);
+      console.warn('로그인 실패/취소', res);
       return;
     }
-    
+
     const token = res.params.access_token;
     const uResp = await fetch(discovery.userInfoEndpoint, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const uInfo = (await uResp.json()) as Auth0User;
+
+    console.log('[User Info]', uInfo);
 
     setTok(token);
     setUser(uInfo);

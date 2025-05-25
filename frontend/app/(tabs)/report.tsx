@@ -2,25 +2,14 @@ import * as React from 'react';
 import { View, StyleSheet, Image, Platform, Alert } from 'react-native';
 import { Text, TextInput, Button, Snackbar } from 'react-native-paper';
 import * as ImagePicker from 'expo-image-picker';
-import Constants from 'expo-constants';
 import RequireAuth from '@/components/RequireAuth';
-import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-
-function getApiUrl() {
-  const envUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:5001';
-  if (Platform.OS === 'web') return envUrl;
-
-  const debuggerHost = Constants.manifest?.debuggerHost?.split(':').shift();
-  if (debuggerHost && envUrl.includes('localhost')) {
-    return `http://${debuggerHost}:5001`;
-  }
-  return envUrl;
-}
+import { useApi } from '../../hooks/useApi';
 
 function ReportScreen() {
-  const queryClient = useQueryClient();
   const router = useRouter();
+  const { postForm } = useApi();
+  
   const [title, setTitle] = React.useState('');
   const [location, setLocation] = React.useState('');
   const [description, setDescription] = React.useState('');
@@ -60,6 +49,7 @@ function ReportScreen() {
       formData.append('title', title);
       formData.append('location', location);
       formData.append('description', description);
+      
       if (Platform.OS === 'web') {
         // Expo web: use the actual File object
         // @ts-ignore
@@ -72,25 +62,20 @@ function ReportScreen() {
         } as any);
       }
 
-      const res = await fetch(`${getApiUrl()}/items`, {
-        method: 'POST',
-        body: formData,
-      });
+      console.log('Submitting item with form data...');
+      const result = await postForm('/items', formData);
+      console.log('Item submitted successfully:', result);
 
-      if (!res.ok) {
-        throw new Error('Failed to submit item');
-      }
+      // Clear form
       setTitle('');
       setLocation('');
       setDescription('');
       setImage(null);
 
-      queryClient.invalidateQueries({ queryKey: ['items'] });
-
       setSnackVisible(true);
     } catch (err) {
-      console.error(err);
-      Alert.alert('Error', 'There was an error submitting the item.');
+      console.error('Error submitting item:', err);
+      Alert.alert('Error', 'There was an error submitting the item. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -139,9 +124,15 @@ function ReportScreen() {
           visible={snackVisible}
           onDismiss={() => setSnackVisible(false)}
           duration={4000}
-          action={{ label: 'Feed', onPress: () => router.push('/') }}
+          action={{ 
+            label: 'View Feed', 
+            onPress: () => {
+              setSnackVisible(false);
+              router.push('/');
+            }
+          }}
         >
-          Item posted!
+          Item posted successfully!
         </Snackbar>
       </View>
     </RequireAuth>

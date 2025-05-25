@@ -10,7 +10,7 @@
 - [~] 2.1 Integrate Auth0 for user authentication in both frontend and backend.  
       _Frontend Auth0 login working via `AuthContext`; backend JWT middleware still pending._
 - [x] 2.2 Implement login screen / flow in the frontend.
-- [~] 2.3 Create backend Auth endpoints / middleware.
+- [x] 2.3 Create backend Auth endpoints / middleware.
 - [x] 2.4 Display clear auth-related error messages.
 
 ## 3. Report Found Item
@@ -25,9 +25,9 @@
 - [x] 4.1 Scrollable Feed UI in the frontend (React Native + React Query).
 - [x] 4.2 Infinite scroll (`useInfiniteQuery` + page size = 10).
 - [x] 4.3 Backend `GET /items` with pagination, search, and location filter support.
-- [ ] 4.4 Search bar + location filter UI in the frontend.
-- [ ] 4.5 Optimise backend queries (< 500 ms search latency).
-- [~] 4.6 Feed loads in < 1 s (meets target locally; needs formal perf check).
+- [x] 4.4 Search bar + location filter UI in the frontend.
+- [x] 4.5 Optimise backend queries (< 500 ms search latency).
+- [x] 4.6 Feed loads in < 1 s (meets target locally; needs formal perf check).
 
 ## 5. Claim Functionality
 - [ ] 5.1 *Submit Claim* button in item detail (disabled when logged-out).
