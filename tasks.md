@@ -37,8 +37,8 @@
 - [x] 5.5 Ensure confirmation email delivered < 1 minute.
 
 ## 6. Responsive UI & Polish
-- [~] 6.1 Mobile-first layout verified on iOS & Android (Expo).
-- [~] 6.2 Consistent styling + error handling.
+- [x] 6.1 Mobile-first layout verified on iOS & Android (Expo).
+- [x] 6.2 Consistent styling + error handling.
 - [x] 6.3 End-to-end testing of all flows.
 - [x] 6.4 Accessibility & UX polish.
 
