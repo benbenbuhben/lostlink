@@ -1,8 +1,14 @@
 import { useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 
-const RAW_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:5001';
-const API_URL = RAW_URL.replace(/\/+$/, ''); // 뒷슬래시 제거
+// ⚠️ IMPORTANT: Change this IP address to your computer's actual IP address!
+// How to find your IP:
+// 1. Mac: System Preferences → Network → Look for "Status: Connected" 
+// 2. Terminal: ifconfig en0 | grep inet
+// 3. Common formats: 192.168.1.xxx or 192.168.0.xxx
+
+const RAW_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.254.29:5001';
+const API_URL = RAW_URL.replace(/\/+$/, ''); // Remove trailing slash
 
 type Json = Record<string, unknown>;
 
@@ -33,12 +39,34 @@ export function useApi() {
 
   /* ---------------- HTTP 메서드 ---------------- */
   const get = useCallback(async <T = Json>(ep: string) => {
-    console.log(`GET ${baseUrl}${ep}`);
-    const r = await fetch(`${baseUrl}${ep}`, { headers: hdr() });
-    if (!r.ok) {
-      throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+    const fullUrl = `${baseUrl}${ep}`;
+    console.log(`🌐 GET ${fullUrl}`);
+    console.log(`🌐 Base URL: ${baseUrl}`);
+    console.log(`🌐 Endpoint: ${ep}`);
+    
+    try {
+      const r = await fetch(fullUrl, { 
+        headers: hdr()
+      });
+      
+      console.log(`✅ Response status: ${r.status} ${r.statusText}`);
+      
+      if (!r.ok) {
+        const errorText = await r.text();
+        console.error(`❌ HTTP Error: ${r.status} - ${errorText}`);
+        throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      }
+      
+      const result = await r.json();
+      console.log(`✅ Response received:`, result);
+      return result as T;
+    } catch (error) {
+      console.error(`❌ Network Error for ${fullUrl}:`, error);
+      if (error instanceof TypeError && error.message.includes('Network request failed')) {
+        throw new Error(`Network connection failed. Please check if ${baseUrl} is accessible.`);
+      }
+      throw error;
     }
-    return (await r.json()) as T;
   }, [baseUrl, hdr]);
 
   const post = useCallback(async <T = Json>(ep: string, data: unknown) => {

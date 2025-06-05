@@ -1,4 +1,4 @@
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:5001';
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.254.29:5001';
 
 export interface Item {
   _id: string;

@@ -1,19 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
-import { 
-  Appbar, 
-  Searchbar, 
-  Card, 
-  Text, 
-  Chip, 
-  ActivityIndicator,
-  Button,
-  Menu,
-  Divider
-} from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { View, StyleSheet, FlatList, TouchableOpacity, Dimensions } from 'react-native';
+import { Searchbar, Card, Text, Chip, Appbar } from 'react-native-paper';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useApi } from '../../hooks/useApi';
+import { LoadingView } from '@/components/LoadingView';
+import { ErrorView } from '@/components/ErrorView';
+import { EmptyStateView } from '@/components/EmptyStateView';
 import RequireAuth from '@/components/RequireAuth';
+import { useAuth } from '../../context/AuthContext';
 
 interface Item {
   _id: string;
@@ -24,7 +18,7 @@ interface Item {
   createdAt: string;
 }
 
-interface ApiResponse {
+interface SearchResponse {
   data: Item[];
   pagination: {
     total: number;
@@ -33,237 +27,351 @@ interface ApiResponse {
   };
 }
 
+interface LocationsResponse {
+  data: string[];
+  total: number;
+  source: string;
+  queryTime?: number;
+}
+
+const { width: screenWidth } = Dimensions.get('window');
+
 function SearchScreen() {
   const router = useRouter();
   const { get } = useApi();
+  const { logout } = useAuth();
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState('');
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [menuVisible, setMenuVisible] = useState(false);
-  const [popularLocations, setPopularLocations] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [lastSearchTime, setLastSearchTime] = useState<number | null>(null);
+  const [availableLocations, setAvailableLocations] = useState<string[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(true);
 
-  // 위치 목록 로드
-  useEffect(() => {
-    const loadLocations = async () => {
-      try {
-        setLocationsLoading(true);
-        const response = await get<{data: string[], total: number, source: string}>('/items/locations');
-        setPopularLocations(response.data || []);
-      } catch (error) {
-        console.error('Failed to load locations:', error);
-        // 오류 시 기본값 사용
-        setPopularLocations([
-          'Library', 'Cafeteria', 'Gym', 'Classroom', 'Parking Lot', 
-          'Student Center', 'Dormitory', 'Bus Stop', 'Campus Store'
-        ]);
-      } finally {
-        setLocationsLoading(false);
-      }
-    };
-
-    loadLocations();
+  // Load available locations from backend
+  const loadLocations = useCallback(async () => {
+    try {
+      setLocationsLoading(true);
+      const response = await get<LocationsResponse>('/items/locations');
+      console.log('📍 Loaded locations:', response.data);
+      setAvailableLocations(response.data || []);
+    } catch (error) {
+      console.error('Failed to load locations:', error);
+      setAvailableLocations([]); // Empty array if failed
+    } finally {
+      setLocationsLoading(false);
+    }
   }, [get]);
 
-  // 디바운스된 검색
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  
+  // Initial load
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedQuery(searchQuery);
-    }, 300); // 300ms 디바운스
+    loadLocations();
+  }, [loadLocations]);
 
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  // Refresh locations when tab becomes focused
+  useFocusEffect(
+    useCallback(() => {
+      console.log('🔄 Search tab focused - refreshing locations...');
+      loadLocations();
+    }, [loadLocations])
+  );
 
-  // 검색 실행
-  const performSearch = useCallback(async () => {
-    if (!debouncedQuery.trim() && !selectedLocation) {
-      setItems([]);
-      setHasSearched(false);
+  const performSearch = useCallback(async (query: string = searchQuery, location: string = selectedLocation) => {
+    if (!query.trim() && !location) {
       return;
     }
 
     try {
       setLoading(true);
-      setHasSearched(true);
-      
-      const params = new URLSearchParams();
-      if (debouncedQuery.trim()) {
-        params.append('q', debouncedQuery.trim());
-      }
-      if (selectedLocation) {
-        params.append('location', selectedLocation);
-      }
-      params.append('limit', '20'); // 검색 결과는 더 많이 표시
+      setError(null);
+      const startTime = Date.now();
 
-      const response = await get<ApiResponse>(`/items?${params.toString()}`);
+      console.log('🔍 Searching:', { query, location });
+
+      let url = '/items/search?';
+      const params = new URLSearchParams();
+
+      if (query.trim()) {
+        params.append('query', query.trim());
+      }
+      if (location) {
+        params.append('location', location);
+      }
+
+      const response = await get<SearchResponse>(url + params.toString());
+      const searchTime = Date.now() - startTime;
+      
+      console.log(`✅ Search completed in ${searchTime}ms, found ${response.data.length} items`);
+      
       setItems(response.data || []);
+      setHasSearched(true);
+      setLastSearchTime(searchTime);
+
     } catch (error) {
       console.error('Search failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Search failed';
+      setError(errorMessage);
       setItems([]);
+      setHasSearched(true);
     } finally {
       setLoading(false);
     }
-  }, [debouncedQuery, selectedLocation, get]);
+  }, [get, searchQuery, selectedLocation]);
 
-  useEffect(() => {
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+    if (query.trim().length >= 2 || selectedLocation) {
+      performSearch(query, selectedLocation);
+    } else if (query.trim().length === 0 && !selectedLocation) {
+      setItems([]);
+      setHasSearched(false);
+      setError(null);
+    }
+  }, [selectedLocation, performSearch]);
+
+  const handleLocationSelect = useCallback((location: string) => {
+    if (selectedLocation === location) {
+      setSelectedLocation('');
+      if (searchQuery.trim()) {
+        performSearch(searchQuery, '');
+      } else {
+        setItems([]);
+        setHasSearched(false);
+      }
+    } else {
+      setSelectedLocation(location);
+      performSearch(searchQuery, location);
+    }
+  }, [selectedLocation, searchQuery, performSearch]);
+
+  const handleItemPress = useCallback((itemId: string) => {
+    router.push(`/item/${itemId}`);
+  }, [router]);
+
+  const handleRetry = useCallback(() => {
     performSearch();
   }, [performSearch]);
 
-  const clearFilters = () => {
+  const clearSearch = useCallback(() => {
     setSearchQuery('');
-    setSelectedLocation(null);
+    setSelectedLocation('');
     setItems([]);
     setHasSearched(false);
-  };
+    setError(null);
+    setLastSearchTime(null);
+  }, []);
 
-  const renderItem = ({ item }: { item: Item }) => (
-    <TouchableOpacity onPress={() => router.push(`/item/${item._id}`)}>
-      <Card style={styles.itemCard}>
-        {item.imageUrl && (
-          <Card.Cover source={{ uri: item.imageUrl }} style={styles.itemImage} />
-        )}
-        <Card.Content style={styles.cardContent}>
-          <Text variant="titleMedium" style={styles.itemTitle}>
-            {item.title}
-          </Text>
-          <Text variant="bodySmall" style={styles.itemLocation}>
-            📍 {item.location}
-          </Text>
-          {item.description && (
-            <Text variant="bodySmall" style={styles.itemDescription} numberOfLines={2}>
-              {item.description}
-            </Text>
+  // Optimized render item function
+  const renderItem = useCallback(({ item }: { item: Item }) => {
+    const formatDate = (dateString: string) => {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+      
+      if (diffInHours < 1) return 'Just now';
+      if (diffInHours < 24) return `${diffInHours}h ago`;
+      return date.toLocaleDateString();
+    };
+
+    return (
+      <TouchableOpacity 
+        onPress={() => handleItemPress(item._id)}
+        accessibilityLabel={`View details for ${item.title} found at ${item.location}`}
+        accessibilityRole="button"
+        testID={`search-result-${item._id}`}
+      >
+        <Card style={styles.itemCard} elevation={2}>
+          {item.imageUrl && (
+            <Card.Cover 
+              source={{ uri: item.imageUrl }} 
+              style={styles.itemImage}
+              accessibilityLabel={`Image of ${item.title}`}
+            />
           )}
-          <Text variant="bodySmall" style={styles.itemDate}>
-            {new Date(item.createdAt).toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            })}
-          </Text>
-        </Card.Content>
-      </Card>
-    </TouchableOpacity>
-  );
+          <Card.Content style={styles.cardContent}>
+            <Text variant="titleMedium" style={styles.itemTitle} numberOfLines={2}>
+              {item.title}
+            </Text>
+            <Text variant="bodySmall" style={styles.itemLocation}>
+              📍 {item.location}
+            </Text>
+            {item.description && (
+              <Text variant="bodySmall" style={styles.itemDescription} numberOfLines={2}>
+                {item.description}
+              </Text>
+            )}
+            <Text variant="bodySmall" style={styles.itemDate}>
+              {formatDate(item.createdAt)}
+            </Text>
+          </Card.Content>
+        </Card>
+      </TouchableOpacity>
+    );
+  }, [handleItemPress]);
 
-  const renderLocationChip = (location: string) => (
-    <Chip
-      key={location}
-      mode={selectedLocation === location ? 'flat' : 'outlined'}
-      selected={selectedLocation === location}
-      onPress={() => setSelectedLocation(selectedLocation === location ? null : location)}
-      style={styles.locationChip}
-    >
-      {location}
-    </Chip>
-  );
+  // Performance info component
+  const SearchPerformanceInfo = useMemo(() => {
+    if (!lastSearchTime || !hasSearched) return null;
+    
+    return (
+      <View style={styles.performanceContainer}>
+        <Text variant="bodySmall" style={styles.performanceText}>
+          Found {items.length} result{items.length !== 1 ? 's' : ''} in {lastSearchTime}ms
+        </Text>
+      </View>
+    );
+  }, [lastSearchTime, items.length, hasSearched]);
+
+  const SearchResults = useMemo(() => {
+    if (loading) {
+      return <LoadingView message="Searching items..." size="large" />;
+    }
+
+    if (error) {
+      return (
+        <ErrorView
+          title="Search failed"
+          message={error}
+          onRetry={handleRetry}
+          retryLabel="Try Again"
+        />
+      );
+    }
+
+    if (hasSearched && items.length === 0) {
+      return (
+        <EmptyStateView
+          emoji="🔍"
+          title="No items found"
+          description="Try different keywords or check the location filters. New items are added regularly!"
+          actionLabel="Clear Search"
+          onAction={clearSearch}
+        />
+      );
+    }
+
+    if (hasSearched && items.length > 0) {
+      return (
+        <>
+          {SearchPerformanceInfo}
+          <View style={styles.resultsHeader}>
+            <Text variant="titleMedium">
+              {items.length} result{items.length !== 1 ? 's' : ''} found
+            </Text>
+            {(searchQuery || selectedLocation) && (
+              <Text variant="bodySmall" style={styles.searchSummary}>
+                {searchQuery && `"${searchQuery}"`}
+                {searchQuery && selectedLocation && ' in '}
+                {selectedLocation && `${selectedLocation}`}
+              </Text>
+            )}
+          </View>
+          
+          <FlatList
+            data={items}
+            keyExtractor={(item) => item._id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContainer}
+            showsVerticalScrollIndicator={false}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            windowSize={10}
+          />
+        </>
+      );
+    }
+
+    // Welcome state
+    return (
+      <View style={styles.welcomeContainer}>
+        <Text variant="headlineSmall" style={styles.welcomeTitle}>
+          🔍 Search Lost Items
+        </Text>
+        <Text variant="bodyMedium" style={styles.welcomeText}>
+          Use the search bar above to find specific items, or filter by location to see what's been found nearby.
+        </Text>
+        <Card style={styles.tipsContainer} elevation={1}>
+          <Card.Content>
+            <Text variant="labelLarge" style={styles.tipsTitle}>
+              Search Tips:
+            </Text>
+            <Text variant="bodySmall" style={styles.tipText}>
+              • Try keywords like "wallet", "keys", "phone"
+            </Text>
+            <Text variant="bodySmall" style={styles.tipText}>
+              • Use location filters to narrow down results
+            </Text>
+            <Text variant="bodySmall" style={styles.tipText}>
+              • Check back regularly for new items
+            </Text>
+          </Card.Content>
+        </Card>
+      </View>
+    );
+  }, [loading, error, hasSearched, items, searchQuery, selectedLocation, handleRetry, clearSearch, SearchPerformanceInfo, renderItem]);
 
   return (
     <RequireAuth>
-      <View style={styles.container}>
+      <View style={styles.outerContainer}>
         <Appbar.Header>
           <Appbar.Content title="Search Items" />
-          {(searchQuery || selectedLocation) && (
-            <Appbar.Action icon="close" onPress={clearFilters} />
-          )}
+          <Appbar.Action icon="logout" onPress={logout} accessibilityLabel="Logout" />
         </Appbar.Header>
 
-        <View style={styles.searchContainer}>
-          {/* 검색바 */}
-          <Searchbar
-            placeholder="Search for items..."
-            onChangeText={setSearchQuery}
-            value={searchQuery}
-            style={styles.searchbar}
-            icon="magnify"
-            clearIcon="close"
-          />
-
-          {/* 위치 필터 */}
-          <View style={styles.filterSection}>
-            <Text variant="labelLarge" style={styles.filterLabel}>
-              Filter by Location:
-            </Text>
-            <View style={styles.locationChips}>
+        <View style={styles.container}>
+          {/* Search Header */}
+          <View style={styles.searchContainer}>
+            <Searchbar
+              placeholder="Search for lost items..."
+              value={searchQuery}
+              onChangeText={handleSearch}
+              style={styles.searchbar}
+              accessibilityLabel="Search for items"
+              testID="search-input"
+            />
+            
+            <View style={styles.filterSection}>
+              <Text variant="labelMedium" style={styles.filterLabel}>
+                Filter by location:
+              </Text>
+              
               {locationsLoading ? (
-                <ActivityIndicator size="small" style={{ margin: 8 }} />
+                <View style={styles.loadingLocations}>
+                  <Text variant="bodySmall" style={styles.loadingText}>
+                    Loading locations...
+                  </Text>
+                </View>
+              ) : availableLocations.length > 0 ? (
+                <View style={styles.locationChips}>
+                  {availableLocations.map((location) => (
+                    <Chip
+                      key={location}
+                      mode={selectedLocation === location ? 'flat' : 'outlined'}
+                      selected={selectedLocation === location}
+                      onPress={() => handleLocationSelect(location)}
+                      style={styles.locationChip}
+                      accessibilityLabel={`Filter by ${location}`}
+                      testID={`location-filter-${location.toLowerCase().replace(/\s+/g, '-')}`}
+                    >
+                      {location}
+                    </Chip>
+                  ))}
+                </View>
               ) : (
-                popularLocations.map(renderLocationChip)
+                <Text variant="bodySmall" style={styles.noLocationsText}>
+                  No locations available yet. Report some items to see location filters!
+                </Text>
               )}
             </View>
           </View>
-        </View>
 
-        {/* 검색 결과 */}
-        <View style={styles.resultsContainer}>
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" />
-              <Text style={styles.loadingText}>Searching...</Text>
-            </View>
-          ) : hasSearched ? (
-            <>
-              <View style={styles.resultsHeader}>
-                <Text variant="titleMedium">
-                  {items.length} result{items.length !== 1 ? 's' : ''} found
-                </Text>
-                {(searchQuery || selectedLocation) && (
-                  <Text variant="bodySmall" style={styles.searchSummary}>
-                    {searchQuery && `"${searchQuery}"`}
-                    {searchQuery && selectedLocation && ' in '}
-                    {selectedLocation && `${selectedLocation}`}
-                  </Text>
-                )}
-              </View>
-              
-              <FlatList
-                data={items}
-                keyExtractor={(item) => item._id}
-                renderItem={renderItem}
-                contentContainerStyle={styles.listContainer}
-                showsVerticalScrollIndicator={false}
-                ListEmptyComponent={
-                  <View style={styles.emptyContainer}>
-                    <Text variant="bodyLarge" style={styles.emptyText}>
-                      No items found matching your search.
-                    </Text>
-                    <Text variant="bodySmall" style={styles.emptySubtext}>
-                      Try different keywords or check the location filters.
-                    </Text>
-                  </View>
-                }
-              />
-            </>
-          ) : (
-            <View style={styles.welcomeContainer}>
-              <Text variant="headlineSmall" style={styles.welcomeTitle}>
-                🔍 Search Lost Items
-              </Text>
-              <Text variant="bodyMedium" style={styles.welcomeText}>
-                Use the search bar above to find specific items, or filter by location to see what's been found nearby.
-              </Text>
-              <View style={styles.tipsContainer}>
-                <Text variant="labelLarge" style={styles.tipsTitle}>
-                  Search Tips:
-                </Text>
-                <Text variant="bodySmall" style={styles.tipText}>
-                  • Try keywords like "wallet", "keys", "phone"
-                </Text>
-                <Text variant="bodySmall" style={styles.tipText}>
-                  • Use location filters to narrow down results
-                </Text>
-                <Text variant="bodySmall" style={styles.tipText}>
-                  • Check back regularly for new items
-                </Text>
-              </View>
-            </View>
-          )}
+          {/* Search Results */}
+          <View style={styles.resultsContainer}>
+            {SearchResults}
+          </View>
         </View>
       </View>
     </RequireAuth>
@@ -271,18 +379,26 @@ function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  outerContainer: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  container: {
+    flex: 1,
   },
   searchContainer: {
     backgroundColor: 'white',
     paddingHorizontal: 16,
     paddingVertical: 12,
     elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   searchbar: {
     marginBottom: 16,
+    elevation: 0,
   },
   filterSection: {
     marginBottom: 8,
@@ -290,6 +406,14 @@ const styles = StyleSheet.create({
   filterLabel: {
     marginBottom: 8,
     color: '#666',
+    fontWeight: '500',
+  },
+  loadingLocations: {
+    paddingVertical: 8,
+  },
+  loadingText: {
+    color: '#888',
+    fontStyle: 'italic',
   },
   locationChips: {
     flexDirection: 'row',
@@ -300,18 +424,24 @@ const styles = StyleSheet.create({
     marginRight: 4,
     marginBottom: 4,
   },
+  noLocationsText: {
+    color: '#888',
+    fontStyle: 'italic',
+    paddingVertical: 8,
+  },
   resultsContainer: {
     flex: 1,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
+  performanceContainer: {
+    backgroundColor: 'white',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
   },
-  loadingText: {
-    marginTop: 16,
+  performanceText: {
     color: '#666',
+    fontSize: 12,
   },
   resultsHeader: {
     padding: 16,
@@ -325,12 +455,15 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     padding: 16,
+    paddingBottom: 100,
   },
   itemCard: {
     marginBottom: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   itemImage: {
-    height: 120,
+    height: 100,
   },
   cardContent: {
     padding: 12,
@@ -338,6 +471,7 @@ const styles = StyleSheet.create({
   itemTitle: {
     fontWeight: 'bold',
     marginBottom: 4,
+    color: '#1a1a1a',
   },
   itemLocation: {
     color: '#666',
@@ -352,19 +486,6 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 12,
   },
-  emptyContainer: {
-    padding: 32,
-    alignItems: 'center',
-  },
-  emptyText: {
-    textAlign: 'center',
-    marginBottom: 8,
-    color: '#666',
-  },
-  emptySubtext: {
-    textAlign: 'center',
-    color: '#888',
-  },
   welcomeContainer: {
     flex: 1,
     padding: 32,
@@ -375,6 +496,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
     fontWeight: 'bold',
+    color: '#1a1a1a',
   },
   welcomeText: {
     textAlign: 'center',
@@ -384,14 +506,12 @@ const styles = StyleSheet.create({
   },
   tipsContainer: {
     alignSelf: 'stretch',
-    backgroundColor: 'white',
-    padding: 16,
-    borderRadius: 8,
-    elevation: 1,
+    maxWidth: 400,
   },
   tipsTitle: {
     marginBottom: 8,
     fontWeight: 'bold',
+    color: '#1a1a1a',
   },
   tipText: {
     color: '#666',

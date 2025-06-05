@@ -1,6 +1,20 @@
 import Item from '../models/Item.js';
 import uploadToS3 from '../utils/uploadToS3.js';
 
+// Helper function to fix localhost URLs in image URLs
+export function fixImageUrl(imageUrl) {
+  if (!imageUrl) return imageUrl;
+  return imageUrl.replace('http://localhost:9000', 'http://192.168.254.29:9000');
+}
+
+// Helper function to fix image URLs in item object
+export function fixItemImageUrl(item) {
+  if (item.imageUrl) {
+    item.imageUrl = fixImageUrl(item.imageUrl);
+  }
+  return item;
+}
+
 // GET /items
 export async function getItems(req, res, next) {
   try {
@@ -47,8 +61,11 @@ export async function getItems(req, res, next) {
       console.log(`Query executed in ${queryTime}ms for ${total} items`);
     }
 
+    // Fix image URLs for mobile access
+    const fixedItems = items.map(fixItemImageUrl);
+
     res.json({
-      data: items,
+      data: fixedItems,
       pagination: {
         total,
         page: parseInt(page, 10),
@@ -81,12 +98,22 @@ export async function createItem(req, res, next) {
       }
     }
 
+    // Get user email from Auth0 (with default fallback)
+    let ownerEmail = 'rackoon1030@gmail.com'; // Default fallback
+    if (req.auth && req.auth.sub) {
+      // Extract email from Auth0 token
+      ownerEmail = req.auth.email || req.auth['https://lostlink.app/email'] || 'rackoon1030@gmail.com';
+    }
+    
+    console.log('📧 Item owner email:', ownerEmail);
+
     const item = new Item({
       title,
       description,
       location,
       imageUrl,
-      // createdBy: req.user?.id // TODO: after adding Auth middleware
+      ownerEmail, // Item owner's email address
+      createdBy: req.auth?.sub // Auth0 user ID
     });
 
     const savedItem = await item.save();
@@ -107,7 +134,10 @@ export async function getItemById(req, res, next) {
       return res.status(404).json({ message: 'Item not found' });
     }
 
-    res.json(item);
+    // Fix image URL for mobile access
+    const fixedItem = fixItemImageUrl(item.toObject());
+
+    res.json(fixedItem);
   } catch (err) {
     next(err);
   }
