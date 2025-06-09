@@ -56,13 +56,17 @@ services:
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET_NAME=lostlink-uploads
-      - MINIO_PUBLIC_URL=http://192.168.254.29:9000
+      - MINIO_PUBLIC_URL=http://192.168.86.35:9000 # replace with your MinIO host IP
       # Auth0 config
       - AUTH0_DOMAIN=dev-p3dnd83yc74l2dvq.us.auth0.com
       - AUTH0_AUDIENCE=https://lostlink-api
       # SendGrid config
       - SENDGRID_API_KEY=${SENDGRID_API_KEY:-SG.your-sendgrid-api-key-here}
       - FROM_EMAIL=rackoon1030@gmail.com
+      # AWS Rekognition config
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
     volumes:
       - ./backend:/usr/src/app
     command: npm run dev

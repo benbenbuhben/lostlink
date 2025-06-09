@@ -7,6 +7,7 @@ const itemSchema = new mongoose.Schema(
     location: { type: String, required: true },
     imageUrl: { type: String },
     ownerEmail: { type: String },
+    tags: { type: [String], default: [] },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -24,9 +25,9 @@ const itemSchema = new mongoose.Schema(
 // Search performance optimization indexes
 itemSchema.index({ createdAt: -1 });
 itemSchema.index({ location: 1 });
-itemSchema.index({ title: 'text', description: 'text' });
+itemSchema.index({ title: 'text', description: 'text', tags: 'text' }); // ← updated
 itemSchema.index({ location: 1, createdAt: -1 });
 
 const Item = mongoose.model('Item', itemSchema);
 
-export default Item; 
+export default Item;

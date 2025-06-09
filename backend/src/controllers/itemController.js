@@ -1,5 +1,8 @@
 import Item from '../models/Item.js';
 import uploadToS3 from '../utils/uploadToS3.js';
+import { RekognitionClient, DetectLabelsCommand } from '@aws-sdk/client-rekognition';
+
+const rekognition = new RekognitionClient({ region: process.env.AWS_REGION });
 
 // Helper function to fix localhost URLs in image URLs
 export function fixImageUrl(imageUrl) {
@@ -15,68 +18,127 @@ export function fixItemImageUrl(item) {
   return item;
 }
 
+// Detect up to 4 high-confidence labels and return them lower-cased
+async function detectTags(buffer) {
+  const cmd = new DetectLabelsCommand({
+    Image: { Bytes: buffer },
+    MaxLabels: 10,
+    MinConfidence: 80,
+  });
+  const { Labels = [] } = await rekognition.send(cmd);
+  return Labels
+    .filter(l => l.Confidence >= 80)
+    .slice(0, 4)
+    .map(l => l.Name.toLowerCase());
+}
+
 // GET /items
 export async function getItems(req, res, next) {
   try {
     const { page = 1, limit = 10, q, location } = req.query;
-    const filter = {};
-    const options = {
-      sort: { createdAt: -1 },
-      skip: (page - 1) * parseInt(limit, 10),
-      limit: parseInt(limit, 10),
-    };
+    const pageNum  = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
 
-    // 텍스트 검색 최적화
-    if (q) {
-      // MongoDB text search 사용 (더 빠름)
-      filter.$text = { $search: q };
-      // 또는 regex 사용 (fallback)
-      if (!filter.$text) {
-        filter.$or = [
-          { title: new RegExp(q, 'i') },
-          { description: new RegExp(q, 'i') },
-        ];
-      }
+    const start = Date.now();
+
+    /* -----------------------------------------------------------
+       0)  Plain feed (no query)  -->  newest first, optional location
+    ----------------------------------------------------------- */
+    if (!q || !q.trim()) {
+      const baseFilter = location
+        ? { location: new RegExp(`^${location}|${location}`, 'i') }
+        : {};
+
+      const [items, total] = await Promise.all([
+        Item.find(baseFilter, null, {
+          sort:  { createdAt: -1 },
+          skip:  (pageNum - 1) * limitNum,
+          limit: limitNum,
+        }).lean(),
+        Item.countDocuments(baseFilter),
+      ]);
+
+      return res.json({
+        data: items.map(fixItemImageUrl),
+        pagination: {
+          total,
+          page:  pageNum,
+          limit: limitNum,
+          queryTime: Date.now() - start,
+        },
+      });
     }
-
-    // 위치 필터 최적화
-    if (location) {
-      // 정확한 매치 우선, 그 다음 부분 매치
-      filter.location = new RegExp(`^${location}|${location}`, 'i');
-    }
-
-    // 성능 측정 시작
-    const startTime = Date.now();
-
-    // 병렬로 데이터와 카운트 조회
-    const [items, total] = await Promise.all([
-      Item.find(filter, null, options).lean(), // .lean()으로 성능 향상
-      Item.countDocuments(filter)
-    ]);
-
-    const queryTime = Date.now() - startTime;
     
-    // 개발 환경에서 성능 로깅
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`Query executed in ${queryTime}ms for ${total} items`);
+    let textHits = [];
+    let regexHits = [];
+
+    /* ---------- base match objects ---------- */
+    const locFilter = location
+      ? { location: new RegExp(`^${location}|${location}`, 'i') }
+      : {};
+
+    /* ---------- 1) full-text search ---------- */
+    if (q && q.trim().length >= 3) {
+      textHits = await Item.find(
+        { ...locFilter, $text: { $search: q.trim() } },
+        { score: { $meta: 'textScore' } },
+        { skip: (pageNum - 1) * limitNum, limit: limitNum }
+      )
+        .sort({ score: { $meta: 'textScore' } })
+        .lean();
     }
 
-    // Fix image URLs for mobile access
-    const fixedItems = items.map(fixItemImageUrl);
+    /* ---------- 2) prefix fallback when needed ---------- */
+    const needRegex =
+      !q || q.trim().length < 3 || textHits.length < limitNum;
+
+    if (needRegex && q && q.trim()) {
+      const rx = new RegExp(q.trim(), 'i');
+      regexHits = await Item.find(
+        {
+          ...locFilter,
+          $or: [
+            { title: rx },
+            { description: rx },
+            { tags: rx },
+          ],
+        },
+        null,
+        { limit: limitNum }
+      ).lean();
+    }
+
+    /* ---------- merge & dedupe ---------- */
+    const combined = [];
+    const seen = new Set();
+
+    [...textHits, ...regexHits].forEach((doc) => {
+      if (!seen.has(doc._id.toString()) && combined.length < limitNum) {
+        combined.push(doc);
+        seen.add(doc._id.toString());
+      }
+    });
+
+    const total = combined.length;
+    const queryTime = Date.now() - start;
+
+    // fix URLs
+    const fixedItems = combined.map(fixItemImageUrl);
 
     res.json({
       data: fixedItems,
       pagination: {
         total,
-        page: parseInt(page, 10),
-        limit: parseInt(limit, 10),
-        queryTime, // 성능 모니터링용
+        page:  pageNum,
+        limit: limitNum,
+        queryTime,
       },
     });
   } catch (err) {
     next(err);
   }
 }
+
 
 // POST /items
 export async function createItem(req, res, next) {
@@ -88,36 +150,45 @@ export async function createItem(req, res, next) {
     }
 
     let imageUrl;
+    let tags = [];
+
     if (req.file) {
       try {
         const { url } = await uploadToS3(req.file);
         imageUrl = url;
+
+        // Auto-generate tags from image bytes
+        tags = await detectTags(req.file.buffer);
       } catch (uploadErr) {
-        console.error('Failed to upload to S3', uploadErr);
-        return res.status(500).json({ message: 'Image upload failed' });
+        console.error('Failed to upload to S3 or detect tags', uploadErr);
+        return res.status(500).json({ message: 'Image upload or tagging failed' });
       }
     }
 
     // Get user email from Auth0 (with default fallback)
-    let ownerEmail = 'rackoon1030@gmail.com'; // Default fallback
+    let ownerEmail = 'rackoon1030@gmail.com';
     if (req.auth && req.auth.sub) {
-      // Extract email from Auth0 token
-      ownerEmail = req.auth.email || req.auth['https://lostlink.app/email'] || 'rackoon1030@gmail.com';
+      ownerEmail =
+        req.auth.email ||
+        req.auth['https://lostlink.app/email'] ||
+        'rackoon1030@gmail.com';
     }
-    
-    console.log('📧 Item owner email:', ownerEmail);
 
     const item = new Item({
       title,
       description,
       location,
       imageUrl,
-      ownerEmail, // Item owner's email address
-      createdBy: req.auth?.sub // Auth0 user ID
+      ownerEmail,
+      tags,
+      createdBy: req.auth?.sub,
     });
 
     const savedItem = await item.save();
-    res.status(201).json(savedItem);
+    res.status(201).json({
+      ...savedItem.toObject(),
+      tagsSuggested: tags,
+    });
   } catch (err) {
     next(err);
   }
@@ -134,11 +205,9 @@ export async function getItemById(req, res, next) {
       return res.status(404).json({ message: 'Item not found' });
     }
 
-    // Fix image URL for mobile access
     const fixedItem = fixItemImageUrl(item.toObject());
-
     res.json(fixedItem);
   } catch (err) {
     next(err);
   }
-} 
+}

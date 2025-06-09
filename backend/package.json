@@ -14,6 +14,7 @@
   "type": "module",
   "description": "",
   "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.826.0",
     "@aws-sdk/client-s3": "^3.515.0",
     "@faker-js/faker": "^8.3.0",
     "@sendgrid/mail": "^8.1.5",

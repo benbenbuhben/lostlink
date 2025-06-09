@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Dimensions, AppState } from 'react-native';
-import { Appbar, Card, Text } from 'react-native-paper';
+import { Appbar, Card, Text, Chip } from 'react-native-paper';
 import { useAuth } from '@/context/AuthContext';
 import { useApi } from '../../hooks/useApi';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -17,6 +17,7 @@ interface Item {
   description?: string;
   imageUrl?: string;
   createdAt: string;
+  tags?: string[];
 }
 
 interface ApiResponse {
@@ -35,7 +36,7 @@ function FeedScreen() {
   const { user, login, logout, ready } = useAuth();
   const { get } = useApi();
   const router = useRouter();
-  
+
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -50,23 +51,23 @@ function FeedScreen() {
       }
       setError(null);
       console.log('Fetching items from API...');
-      
+
       // Cache optimization with increased limit
       const response = await get<ApiResponse>('/items?limit=20');
       console.log('API response:', response);
-      
+
       const endTime = Date.now();
       const totalTime = endTime - startTime;
       setLoadTime(totalTime);
-      
+
       // Performance logging
       console.log(`Feed loaded in ${totalTime}ms (Backend: ${response.pagination.queryTime || 'N/A'}ms)`);
-      
+
       // Remove duplicates based on _id
-      const uniqueItems = response.data?.filter((item, index, self) => 
+      const uniqueItems = response.data?.filter((item, index, self) =>
         index === self.findIndex(t => t._id === item._id)
       ) || [];
-      
+
       setItems(uniqueItems);
       setError(null);
     } catch (err) {
@@ -119,7 +120,7 @@ function FeedScreen() {
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
-    
+
     return () => {
       subscription?.remove();
     };
@@ -131,14 +132,14 @@ function FeedScreen() {
       const date = new Date(dateString);
       const now = new Date();
       const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-      
+
       if (diffInHours < 1) return 'Just now';
       if (diffInHours < 24) return `${diffInHours}h ago`;
       return date.toLocaleDateString();
     };
 
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         onPress={() => handleItemPress(item._id)}
         accessibilityLabel={`View details for ${item.title}`}
         accessibilityRole="button"
@@ -146,8 +147,8 @@ function FeedScreen() {
       >
         <Card style={styles.itemCard} elevation={3}>
           {item.imageUrl && (
-            <Card.Cover 
-              source={{ uri: item.imageUrl }} 
+            <Card.Cover
+              source={{ uri: item.imageUrl }}
               style={styles.itemImage}
               accessibilityLabel={`Image of ${item.title}`}
             />
@@ -164,6 +165,16 @@ function FeedScreen() {
                 {item.description}
               </Text>
             )}
+            {/* auto-tags */}
+            {(item.tags?.length ?? 0) > 0 && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 }}>
+                {(item.tags ?? []).map((tag) => (
+                  <Chip key={tag} mode="outlined" style={{ marginRight: 4, marginBottom: 4 }}>
+                    {tag}
+                  </Chip>
+                ))}
+              </View>
+            )}
             <Text variant="bodySmall" style={styles.itemDate}>
               {formatDate(item.createdAt)}
             </Text>
@@ -176,7 +187,7 @@ function FeedScreen() {
   // Performance info component
   const PerformanceInfo = useMemo(() => {
     if (!loadTime) return null;
-    
+
     return (
       <View style={styles.performanceContainer}>
         <Text variant="bodySmall" style={styles.performanceText}>
