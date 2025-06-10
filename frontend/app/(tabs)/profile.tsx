@@ -1,13 +1,22 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Card, Text, Button, Avatar, Divider, List, Appbar } from 'react-native-paper';
+import { Card, Text, Button, Avatar, Divider, List, Appbar, Chip } from 'react-native-paper';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
 import RequireAuth from '@/components/RequireAuth';
+import { useMyFoundItems } from '@/hooks/useMyFoundItems';
+import { useUpdateClaimStatus } from '@/hooks/useUpdateClaimStatus';
+
+// statusStyleMap moved below styles
 
 function ProfileScreen() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const {
+    data: myItems = [],
+    isLoading: itemsLoading,
+  } = useMyFoundItems();
+  const { mutate, isPending: updating } = useUpdateClaimStatus();
 
   const handleEmailSupport = () => {
     router.push('/support');
@@ -29,32 +38,33 @@ function ProfileScreen() {
           <Appbar.Action icon="logout" onPress={logout} accessibilityLabel="Logout" />
         </Appbar.Header>
 
-        <ScrollView 
-          style={styles.container} 
+        <ScrollView
+          style={styles.container}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           {/* User Profile Card */}
           <Card style={styles.profileCard} elevation={3}>
             <Card.Content style={styles.profileContent}>
-              <Avatar.Text 
-                size={80} 
+              <Avatar.Text
+                size={80}
                 label={user?.name?.charAt(0).toUpperCase() || 'U'}
                 style={styles.avatar}
               />
-              
+
               <Text variant="headlineSmall" style={styles.userName}>
                 {user?.name || 'User'}
               </Text>
-              
+
               <Text variant="bodyMedium" style={styles.userEmail}>
                 {user?.email || 'No email provided'}
               </Text>
-              
+
               <Text variant="bodySmall" style={styles.userInfo}>
-                Member since {new Date().toLocaleDateString('en-US', { 
-                  month: 'long', 
-                  year: 'numeric' 
+                Member since{' '}
+                {new Date().toLocaleDateString('en-US', {
+                  month: 'long',
+                  year: 'numeric',
                 })}
               </Text>
             </Card.Content>
@@ -66,9 +76,9 @@ function ProfileScreen() {
               <Text variant="titleLarge" style={styles.sectionTitle}>
                 About LostLink
               </Text>
-              
+
               <Text variant="bodyMedium" style={styles.description}>
-                LostLink helps you report, browse, and claim lost & found items in your community. 
+                LostLink helps you report, browse, and claim lost & found items in your community.
                 Together, we're building a more connected and helpful campus environment.
               </Text>
 
@@ -83,7 +93,7 @@ function ProfileScreen() {
                     Search Items
                   </Text>
                 </View>
-                
+
                 <View style={styles.statItem}>
                   <Text variant="titleMedium" style={styles.statNumber}>
                     📝
@@ -92,7 +102,7 @@ function ProfileScreen() {
                     Report Found
                   </Text>
                 </View>
-                
+
                 <View style={styles.statItem}>
                   <Text variant="titleMedium" style={styles.statNumber}>
                     🤝
@@ -102,6 +112,72 @@ function ProfileScreen() {
                   </Text>
                 </View>
               </View>
+            </Card.Content>
+          </Card>
+
+          {/* My Found Items Card */}
+          <Card style={styles.foundCard} elevation={2}>
+            <Card.Content>
+              <Text variant="titleLarge" style={styles.sectionTitle}>
+                My Found Items
+              </Text>
+
+              {itemsLoading && (
+                <Text variant="bodySmall" style={styles.loadingText}>
+                  Loading items...
+                </Text>
+              )}
+
+              {!itemsLoading && myItems.length === 0 && (
+                <Text variant="bodySmall" style={styles.noItemsText}>
+                  You have not reported any items yet.
+                </Text>
+              )}
+
+              {!itemsLoading &&
+                myItems.map((item) => (
+                  <View key={item._id} style={styles.foundItem}>
+                    <Text variant="bodyMedium" style={styles.itemTitle}>
+                      {item.title}
+                    </Text>
+                    <Text variant="bodySmall" style={styles.itemMeta}>
+                      {item.location} · {new Date(item.createdAt).toLocaleDateString()}
+                    </Text>
+
+                    {item.claims.length === 0 ? (
+                      <Text variant="bodySmall" style={styles.noClaimsText}>
+                        No claims yet
+                      </Text>
+                    ) : (
+                      item.claims.slice(0, 2).map((cl) => (
+                        <View key={cl._id} style={styles.claimRow}>
+                          <Text variant="bodySmall" style={styles.claimMsg}>
+                            {cl.message.slice(0, 80)}
+                          </Text>
+
+                          {cl.status === 'pending' ? (
+                            <View style={styles.actionBtns}>
+                              <Button compact mode="text" onPress={() => mutate({ itemId: item._id, claimId: cl._id, newStatus: 'approved' })}>
+                                Approve
+                              </Button>
+                              <Button compact mode="text" onPress={() => mutate({ itemId: item._id, claimId: cl._id, newStatus: 'rejected' })}>
+                                Reject
+                              </Button>
+                            </View>
+                          ) : (
+                            <Chip
+                              mode="outlined"
+                              compact
+                              style={[styles.statusChip, statusStyleMap[cl.status]]}
+                            >
+                              {cl.status.toUpperCase()}
+                            </Chip>
+                          )}
+                        </View>
+                      ))
+                    )}
+                  </View>
+                ))}
             </Card.Content>
           </Card>
 
@@ -154,7 +230,7 @@ function ProfileScreen() {
               <Text variant="titleMedium" style={styles.sectionTitle}>
                 App Information
               </Text>
-              
+
               <View style={styles.versionInfo}>
                 <Text variant="bodySmall" style={styles.versionLabel}>
                   Version: 1.0.0
@@ -251,6 +327,27 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
+  loadingText: {
+    color: '#888',
+  },
+  noItemsText: {
+    color: '#888',
+  },
+  itemTitle: {
+    fontWeight: '600',
+    color: '#1a1a1a',
+  },
+  itemMeta: {
+    color: '#666',
+  },
+  noClaimsText: {
+    color: '#888',
+    marginTop: 4,
+  },
+  claimStatus: {
+    marginLeft: 8,
+    fontWeight: '700',
+  },
   settingsCard: {
     marginBottom: 16,
     borderRadius: 12,
@@ -274,6 +371,28 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
   },
+  foundCard: { marginBottom: 16, borderRadius: 12, backgroundColor: '#f7f5ff' },
+
+  foundItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#eee' },
+
+  claimRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+
+  claimMsg: { flexShrink: 1, color: '#444', marginRight: 8 },
+
+  actionBtns: { flexDirection: 'row', gap: 8 },
+
+  statusChip: { borderRadius: 12 },
+
+  statusApproved: { borderColor: '#4caf50' },
+  statusRejected: { borderColor: '#f44336' },
+  statusPending: { borderColor: '#ff9800' },
 });
 
-export default ProfileScreen; 
+// statusStyleMap moved here after styles is defined
+const statusStyleMap = {
+  approved: styles.statusApproved,
+  rejected: styles.statusRejected,
+  pending: styles.statusPending,
+} as const;
+
+export default ProfileScreen;

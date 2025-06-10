@@ -3,6 +3,7 @@ import { getItems, createItem, getItemById, fixItemImageUrl } from '../controlle
 import { createClaim, updateClaimStatus } from '../controllers/claimController.js';
 import upload from '../middleware/upload.js';
 import { authenticate } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
 import Item from '../models/Item.js';
 
 const router = express.Router();
@@ -102,6 +103,27 @@ router.get('/locations', async (req, res) => {
       total: 0,
       source: 'error'
     });
+  }
+});
+
+router.get('/mine', authenticate, requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.userDoc?._id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    const items = await Item.find({ createdBy: userId })
+      .populate({
+        path: 'claims',
+        options: { sort: { createdAt: -1 } },   // newest claim first
+      })
+      .sort({ createdAt: -1 })                  // newest item first
+      .lean();
+
+    res.json(items.map(fixItemImageUrl));
+  } catch (err) {
+    next(err);
   }
 });
 

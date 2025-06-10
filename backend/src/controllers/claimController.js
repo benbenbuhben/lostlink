@@ -146,54 +146,60 @@ export async function updateClaimStatus(req, res, next) {
     const { status } = req.body;
     const claimId = req.params.id;
 
+    // 1. validate new status
     if (!['approved', 'rejected'].includes(status)) {
-      return res.status(400).json({ 
-        message: 'Status must be either "approved" or "rejected"' 
+      return res.status(400).json({
+        message: 'Status must be either "approved" or "rejected"',
       });
     }
 
-    // Get claim and related item information
+    // 2. load claim + owning item
     const claim = await Claim.findById(claimId).populate('itemId');
     if (!claim) {
       return res.status(404).json({ message: 'Claim not found' });
     }
 
-    // Permission check (only item owner can change status)
-    const userId = req.auth?.sub;
-    if (claim.itemId.createdBy && claim.itemId.createdBy.toString() !== userId) {
-      return res.status(403).json({ 
-        message: 'Only the item owner can update claim status' 
+    // 3. permission check  -  only the user who created the item can update
+    const ownerId = claim.itemId.createdBy?.toString();
+    const currentUserId = req.userDoc?._id?.toString(); // set by attachUser middleware
+
+    if (!currentUserId || ownerId !== currentUserId) {
+      return res.status(403).json({
+        message: 'Only the item owner can update claim status',
       });
     }
 
-    // Update status
+    // 4. update status
     claim.status = status;
     const updatedClaim = await claim.save();
 
-    // Send status update email to claimer (background)
+    // 5. send status-update email in background (best-effort)
     setImmediate(async () => {
       try {
-        // Get claimer information (if Auth0 user)
         let claimerEmail = null;
         if (claim.claimerId !== 'anonymous') {
-          // Logic to get user info via Auth0 API can be added here
-          // Currently simplified/skipped
+          // TODO: look up Auth0 profile for email if needed
         }
 
         if (claimerEmail) {
-          await sendClaimStatusUpdateEmail(claimerEmail, claim.itemId, claim, status);
+          await sendClaimStatusUpdateEmail(
+            claimerEmail,
+            claim.itemId,
+            claim,
+            status,
+          );
         }
       } catch (emailError) {
-        console.error('❌ Failed to send status update email:', emailError);
+        console.error('Failed to send status update email:', emailError);
       }
     });
 
+    // 6. success response
     res.json({
       message: `Claim ${status} successfully`,
-      claim: updatedClaim
+      claim: updatedClaim,
     });
-
   } catch (err) {
     next(err);
   }
-} 
+}
