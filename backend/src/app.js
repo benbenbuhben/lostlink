@@ -9,6 +9,7 @@ import itemRoutes from './routes/itemRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import claimRoutes from './routes/claimRoutes.js';
 import { authenticate } from './middleware/auth.js';
+import { attachUser } from './middleware/attachUser.js';
 
 const app = express();
 
@@ -19,6 +20,9 @@ connectDB();
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
+
+app.use(authenticate);   // ← verify access-token, sets req.auth
+app.use(attachUser);     // ← find-or-create User, sets req.userDoc
 
 // Routes
 app.use('/items', itemRoutes);

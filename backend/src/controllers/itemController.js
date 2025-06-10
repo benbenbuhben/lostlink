@@ -152,28 +152,35 @@ export async function createItem(req, res, next) {
     let imageUrl;
     let tags = [];
 
+    // ────────────────────────────────────────────────────────────
+    // 1. Handle image upload + auto-tagging
+    // ────────────────────────────────────────────────────────────
     if (req.file) {
       try {
         const { url } = await uploadToS3(req.file);
         imageUrl = url;
-
-        // Auto-generate tags from image bytes
-        tags = await detectTags(req.file.buffer);
-      } catch (uploadErr) {
-        console.error('Failed to upload to S3 or detect tags', uploadErr);
+        tags = await detectTags(req.file.buffer);      // Rekognition labels
+      } catch (err) {
+        console.error('Failed to upload to S3 or detect tags', err);
         return res.status(500).json({ message: 'Image upload or tagging failed' });
       }
     }
 
-    // Get user email from Auth0 (with default fallback)
-    let ownerEmail = 'rackoon1030@gmail.com';
-    if (req.auth && req.auth.sub) {
+    // ────────────────────────────────────────────────────────────
+    // 2. Resolve owner email from JWT (or fallback)
+    // ────────────────────────────────────────────────────────────
+    let ownerEmail = 'rackoon1030@gmail.com';          // final fallback
+    if (req.auth?.payload?.sub) {
       ownerEmail =
-        req.auth.email ||
-        req.auth['https://lostlink.app/email'] ||
-        'rackoon1030@gmail.com';
+        req.auth.payload['https://lostlink.app/email'] ||
+        req.auth.payload.email ||
+        ownerEmail;
     }
 
+    // ────────────────────────────────────────────────────────────
+    // 3. Create and save the Item document
+    //    • createdBy = Mongo ObjectId from attachUser
+    // ────────────────────────────────────────────────────────────
     const item = new Item({
       title,
       description,
@@ -181,10 +188,14 @@ export async function createItem(req, res, next) {
       imageUrl,
       ownerEmail,
       tags,
-      createdBy: req.auth?.sub,
+      createdBy: req.userDoc?._id || null,
     });
 
     const savedItem = await item.save();
+
+    // ────────────────────────────────────────────────────────────
+    // 4. Respond
+    // ────────────────────────────────────────────────────────────
     res.status(201).json({
       ...savedItem.toObject(),
       tagsSuggested: tags,
@@ -193,6 +204,7 @@ export async function createItem(req, res, next) {
     next(err);
   }
 }
+
 
 // GET /items/:id
 export async function getItemById(req, res, next) {

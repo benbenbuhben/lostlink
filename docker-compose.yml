@@ -58,7 +58,7 @@ services:
       - MINIO_BUCKET_NAME=lostlink-uploads
       - MINIO_PUBLIC_URL=http://192.168.86.35:9000 # replace with your MinIO host IP
       # Auth0 config
-      - AUTH0_DOMAIN=dev-p3dnd83yc74l2dvq.us.auth0.com
+      - AUTH0_DOMAIN=dev-7zwyji3snq5201k3.us.auth0.com
       - AUTH0_AUDIENCE=https://lostlink-api
       # SendGrid config
       - SENDGRID_API_KEY=${SENDGRID_API_KEY:-SG.your-sendgrid-api-key-here}
