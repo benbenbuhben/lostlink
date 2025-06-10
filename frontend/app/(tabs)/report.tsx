@@ -23,7 +23,7 @@ function ReportScreen() {
   const { postForm } = useApi();
   const { user, logout } = useAuth();
   const router = useRouter();
-  
+
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
@@ -35,7 +35,7 @@ function ReportScreen() {
   const pickImageWeb = async () => {
     try {
       console.log('🌐 Web image picker');
-      
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -71,15 +71,15 @@ function ReportScreen() {
       'Add Photo',
       'Choose how you want to add a photo of the item',
       [
-        { 
-          text: 'Photo Library', 
+        {
+          text: 'Photo Library',
           onPress: async () => {
             console.log('📸 Photo Library selected');
-            
+
             try {
               const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
               console.log('📸 Permission result:', permissionResult);
-              
+
               if (permissionResult.granted === false) {
                 Alert.alert('Permission Required', 'Sorry, we need camera roll permissions to make this work!');
                 return;
@@ -105,15 +105,15 @@ function ReportScreen() {
             }
           }
         },
-        { 
-          text: 'Camera', 
+        {
+          text: 'Camera',
           onPress: async () => {
             console.log('📷 Camera selected');
-            
+
             try {
               const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
               console.log('📷 Camera permission:', permissionResult);
-              
+
               if (permissionResult.granted === false) {
                 Alert.alert('Permission Required', 'Sorry, we need camera permissions to make this work!');
                 return;
@@ -143,6 +143,25 @@ function ReportScreen() {
       ]
     );
   };
+
+  function showSuccessDialog(title: string, message: string, onView: () => void, onAnother: () => void) {
+    if (Platform.OS === 'web') {
+      // Web: use Snackbar
+      setSnackMessage(message);
+      setShowSnack(true);
+    } else {
+      // Native: regular Alert sheet
+      Alert.alert(
+        title,
+        message,
+        [
+          { text: 'Report Another', onPress: onAnother },
+          { text: 'View Item', onPress: onView },
+        ],
+        { cancelable: false }
+      );
+    }
+  }
 
   const handleSubmit = async () => {
     if (!user) {
@@ -179,13 +198,13 @@ function ReportScreen() {
     try {
       setSubmitting(true);
       const startTime = Date.now();
-      
+
       console.log('📤 Submitting item report...');
 
       const formData = new FormData();
       formData.append('title', title.trim());
       formData.append('location', location.trim());
-      
+
       if (description.trim()) {
         formData.append('description', description.trim());
       }
@@ -196,13 +215,20 @@ function ReportScreen() {
         const match = /\.(\w+)$/.exec(filename);
         const type = match ? `image/${match[1]}` : 'image/jpeg';
 
-        formData.append('image', {
-          uri: imageUri,
-          name: filename,
-          type,
-        } as any);
-        
-        console.log('📷 Including image:', { filename, type, size: image.fileSize });
+        let fileForForm: any;
+
+        if (Platform.OS === 'web') {
+          // Convert the blob: URI to a real File so the browser can send it
+          const fetched = await fetch(imageUri);
+          const blob = await fetched.blob();
+          fileForForm = new File([blob], filename, { type });
+        } else {
+          // Native (iOS / Android) still uses the RN-style object
+          fileForForm = { uri: imageUri, name: filename, type };
+        }
+
+        formData.append('image', fileForForm);
+        console.log('📷 Including image:', { filename, type });
       }
 
       const response = await postForm<ItemResponse>('/items', formData);
@@ -219,36 +245,23 @@ function ReportScreen() {
         `${performance?.uploadTime ? `🖼️ Image processing: ${performance.uploadTime}ms\n` : ''}` +
         `\nYour item is now visible to others who might be looking for it.`;
 
-      Alert.alert(
+      showSuccessDialog(
         '🎉 Success!',
         successMessage,
-        [
-          { 
-            text: 'Report Another', 
-            onPress: () => {
-              // Clear form for next report
-              setTitle('');
-              setLocation('');
-              setDescription('');
-              setImage(null);
-            }
-          },
-          { 
-            text: 'View Item', 
-            onPress: () => {
-              router.push(`/item/${response._id}`);
-            },
-            style: 'default'
-          }
-        ],
-        { cancelable: false }
+        () => router.push(`/item/${response._id}`),
+        () => {
+          setTitle('');
+          setLocation('');
+          setDescription('');
+          setImage(null);
+        }
       );
 
     } catch (error) {
       console.error('Failed to submit item:', error);
-      
+
       let errorMessage = 'Failed to report item. Please try again.';
-      
+
       if (error instanceof Error) {
         if (error.message?.includes('401')) {
           errorMessage = 'Please login to report items.';
@@ -258,7 +271,7 @@ function ReportScreen() {
           errorMessage = 'Please check your input and try again.';
         }
       }
-      
+
       setSnackMessage(errorMessage);
       setShowSnack(true);
     } finally {
@@ -279,9 +292,9 @@ function ReportScreen() {
           <Appbar.Content title="Report Found Item" />
           <Appbar.Action icon="logout" onPress={logout} accessibilityLabel="Logout" />
         </Appbar.Header>
-        
-        <ScrollView 
-          style={styles.container} 
+
+        <ScrollView
+          style={styles.container}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
@@ -290,7 +303,7 @@ function ReportScreen() {
               <Text variant="headlineSmall" style={styles.heading}>
                 Report Found Item
               </Text>
-              
+
               <Text variant="bodyMedium" style={styles.subtitle}>
                 Help someone recover their lost belongings by reporting what you found.
               </Text>
@@ -300,17 +313,17 @@ function ReportScreen() {
                 <Text variant="titleSmall" style={styles.sectionTitle}>
                   Photo (Optional)
                 </Text>
-                
+
                 {image ? (
                   <View style={styles.imageContainer}>
-                    <Image 
-                      source={{ uri: image.uri }} 
+                    <Image
+                      source={{ uri: image.uri }}
                       style={styles.preview}
                       accessibilityLabel="Selected image preview"
                     />
                     <View style={styles.imageActions}>
-                      <Button 
-                        mode="outlined" 
+                      <Button
+                        mode="outlined"
                         onPress={showImagePicker}
                         style={styles.imageButton}
                         icon="camera"
@@ -318,8 +331,8 @@ function ReportScreen() {
                       >
                         Change
                       </Button>
-                      <Button 
-                        mode="text" 
+                      <Button
+                        mode="text"
                         onPress={removeImage}
                         style={styles.imageButton}
                         icon="delete"
@@ -330,8 +343,8 @@ function ReportScreen() {
                     </View>
                   </View>
                 ) : (
-                  <TouchableOpacity 
-                    style={styles.imagePlaceholder} 
+                  <TouchableOpacity
+                    style={styles.imagePlaceholder}
                     onPress={showImagePicker}
                     accessibilityLabel="Add photo of the item"
                     accessibilityRole="button"
@@ -423,7 +436,7 @@ function ReportScreen() {
               <Text variant="titleMedium" style={styles.tipsTitle}>
                 💡 Reporting Tips
               </Text>
-              
+
               <Text variant="bodySmall" style={styles.tipItem}>
                 • Be specific with the title (brand, color, type)
               </Text>
