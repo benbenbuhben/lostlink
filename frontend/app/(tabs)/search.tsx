@@ -25,7 +25,7 @@ import { ErrorView } from '@/components/ErrorView';
 import { EmptyStateView } from '@/components/EmptyStateView';
 import RequireAuth from '@/components/RequireAuth';
 import { useAuth } from '../../context/AuthContext';
-import Highlighter from '@/components/Highlighter';          // <-- new
+import Highlighter from '@/components/Highlighter';
 
 interface Item {
   _id: string;
@@ -158,19 +158,24 @@ function SearchScreen() {
   );
 
   const handleLocationSelect = useCallback(
-    (location: string) => {
-      if (selectedLocation === location) {
-        setSelectedLocation('');
-        if (searchQuery.trim()) {
-          performSearch(searchQuery, '');
-        } else {
-          setItems([]);
-          setHasSearched(false);
-        }
-      } else {
-        setSelectedLocation(location);
-        performSearch(searchQuery, location);
+    (loc: string) => {
+      // toggle chip state
+      const nextLoc = selectedLocation === loc ? '' : loc;
+      setSelectedLocation(nextLoc);
+
+      const queryTrimmed = searchQuery.trim();
+
+      if (!queryTrimmed && !nextLoc) {
+        // nothing to search for → clear results completely
+        setItems([]);
+        setHasSearched(false);
+        setError(null);
+        setLastSearchTime(null);
+        return;
       }
+
+      // otherwise (chip turned on, or query present) → (re)fetch
+      performSearch(queryTrimmed, nextLoc);
     },
     [selectedLocation, searchQuery, performSearch],
   );
