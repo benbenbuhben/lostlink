@@ -93,7 +93,7 @@ Example root `.env`:
 
 ```
 MONGO_URI=mongodb://mongo:27017/lostlink
-RESEND_API_KEY=re_jbsMJVYw_N6hpajzdThHHby9JDJFawfEM
+RESEND_API_KEY=re_your-resend-api-key-here
 FROM_EMAIL=rackoon1030@gmail.com
 AUTH0_DOMAIN=…
 AUTH0_CLIENT_ID=…
