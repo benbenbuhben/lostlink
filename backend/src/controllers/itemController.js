@@ -1,42 +1,180 @@
 import Item from '../models/Item.js';
 import uploadToS3 from '../utils/uploadToS3.js';
+import { RekognitionClient, DetectLabelsCommand } from '@aws-sdk/client-rekognition';
+
+// Initialize Rekognition client only if AWS credentials are available
+let rekognition = null;
+if (process.env.AWS_REGION && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+  try {
+    rekognition = new RekognitionClient({ 
+      region: process.env.AWS_REGION,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      }
+    });
+    console.log('✅ AWS Rekognition client initialized');
+  } catch (err) {
+    console.warn('⚠️ Failed to initialize Rekognition client:', err.message);
+  }
+} else {
+  console.warn('⚠️ AWS Rekognition not configured - skipping auto-tagging');
+}
+
+// Helper function to fix localhost URLs in image URLs
+export function fixImageUrl(imageUrl) {
+  if (!imageUrl) return imageUrl;
+  // Get the correct MinIO public URL from environment
+  const correctUrl = process.env.MINIO_PUBLIC_URL || 'http://192.168.254.29:9000';
+  
+  // Replace common incorrect URLs
+  return imageUrl
+    .replace(/http:\/\/localhost:9000/g, correctUrl)
+    .replace(/http:\/\/192\.168\.86\.\d+:9000/g, correctUrl)
+    .replace(/http:\/\/192\.168\.\d+\.\d+:9000/g, correctUrl);
+}
+
+// Helper function to fix image URLs in item object
+export function fixItemImageUrl(item) {
+  if (item.imageUrl) {
+    item.imageUrl = fixImageUrl(item.imageUrl);
+  }
+  return item;
+}
+
+// Detect up to 4 high-confidence labels and return them lower-cased
+async function detectTags(buffer) {
+  // Skip if Rekognition is not configured
+  if (!rekognition) {
+    console.log('⚠️ Rekognition not available - skipping tag detection');
+    return [];
+  }
+
+  try {
+    const cmd = new DetectLabelsCommand({
+      Image: { Bytes: buffer },
+      MaxLabels: 10,
+      MinConfidence: 80,
+    });
+    const { Labels = [] } = await rekognition.send(cmd);
+    return Labels
+      .filter(l => l.Confidence >= 80)
+      .slice(0, 4)
+      .map(l => l.Name.toLowerCase());
+  } catch (err) {
+    console.error('❌ Rekognition tag detection failed:', err.message);
+    // Return empty array instead of throwing - don't break item creation
+    return [];
+  }
+}
 
 // GET /items
 export async function getItems(req, res, next) {
   try {
     const { page = 1, limit = 10, q, location } = req.query;
-    const filter = {};
+    const pageNum  = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
 
-    if (q) {
-      filter.$or = [
-        { title: new RegExp(q, 'i') },
-        { description: new RegExp(q, 'i') },
-      ];
+    const start = Date.now();
+
+    /* -----------------------------------------------------------
+       0)  Plain feed (no query)  -->  newest first, optional location
+    ----------------------------------------------------------- */
+    if (!q || !q.trim()) {
+      const baseFilter = location
+        ? { location: new RegExp(`^${location}|${location}`, 'i') }
+        : {};
+
+      const [items, total] = await Promise.all([
+        Item.find(baseFilter, null, {
+          sort:  { createdAt: -1 },
+          skip:  (pageNum - 1) * limitNum,
+          limit: limitNum,
+        }).lean(),
+        Item.countDocuments(baseFilter),
+      ]);
+
+      return res.json({
+        data: items.map(fixItemImageUrl),
+        pagination: {
+          total,
+          page:  pageNum,
+          limit: limitNum,
+          queryTime: Date.now() - start,
+        },
+      });
+    }
+    
+    let textHits = [];
+    let regexHits = [];
+
+    /* ---------- base match objects ---------- */
+    const locFilter = location
+      ? { location: new RegExp(`^${location}|${location}`, 'i') }
+      : {};
+
+    /* ---------- 1) full-text search ---------- */
+    if (q && q.trim().length >= 3) {
+      textHits = await Item.find(
+        { ...locFilter, $text: { $search: q.trim() } },
+        { score: { $meta: 'textScore' } },
+        { skip: (pageNum - 1) * limitNum, limit: limitNum }
+      )
+        .sort({ score: { $meta: 'textScore' } })
+        .lean();
     }
 
-    if (location) {
-      filter.location = new RegExp(location, 'i');
+    /* ---------- 2) prefix fallback when needed ---------- */
+    const needRegex =
+      !q || q.trim().length < 3 || textHits.length < limitNum;
+
+    if (needRegex && q && q.trim()) {
+      const rx = new RegExp(q.trim(), 'i');
+      regexHits = await Item.find(
+        {
+          ...locFilter,
+          $or: [
+            { title: rx },
+            { description: rx },
+            { tags: rx },
+          ],
+        },
+        null,
+        { limit: limitNum }
+      ).lean();
     }
 
-    const items = await Item.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit, 10));
+    /* ---------- merge & dedupe ---------- */
+    const combined = [];
+    const seen = new Set();
 
-    const total = await Item.countDocuments(filter);
+    [...textHits, ...regexHits].forEach((doc) => {
+      if (!seen.has(doc._id.toString()) && combined.length < limitNum) {
+        combined.push(doc);
+        seen.add(doc._id.toString());
+      }
+    });
+
+    const total = combined.length;
+    const queryTime = Date.now() - start;
+
+    // fix URLs
+    const fixedItems = combined.map(fixItemImageUrl);
 
     res.json({
-      data: items,
+      data: fixedItems,
       pagination: {
         total,
-        page: parseInt(page, 10),
-        limit: parseInt(limit, 10),
+        page:  pageNum,
+        limit: limitNum,
+        queryTime,
       },
     });
   } catch (err) {
     next(err);
   }
 }
+
 
 // POST /items
 export async function createItem(req, res, next) {
@@ -48,42 +186,82 @@ export async function createItem(req, res, next) {
     }
 
     let imageUrl;
+    let tags = [];
+
+    // ────────────────────────────────────────────────────────────
+    // 1. Handle image upload + auto-tagging
+    // ────────────────────────────────────────────────────────────
     if (req.file) {
       try {
         const { url } = await uploadToS3(req.file);
         imageUrl = url;
-      } catch (uploadErr) {
-        console.error('Failed to upload to S3', uploadErr);
-        return res.status(500).json({ message: 'Image upload failed' });
+        // Try to detect tags, but don't fail if it doesn't work
+        try {
+          tags = await detectTags(req.file.buffer);
+        } catch (tagErr) {
+          console.warn('⚠️ Tag detection failed (continuing without tags):', tagErr.message);
+          tags = []; // Continue without tags
+        }
+      } catch (err) {
+        console.error('❌ Failed to upload to S3:', err);
+        return res.status(500).json({ message: 'Image upload failed: ' + err.message });
       }
     }
 
+    // ────────────────────────────────────────────────────────────
+    // 2. Resolve owner email from JWT (or fallback)
+    // ────────────────────────────────────────────────────────────
+    let ownerEmail = 'rackoon1030@gmail.com';          // final fallback
+    if (req.auth?.payload?.sub) {
+      ownerEmail =
+        req.auth.payload['https://lostlink.app/email'] ||
+        req.auth.payload.email ||
+        ownerEmail;
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // 3. Create and save the Item document
+    //    • createdBy = Mongo ObjectId from attachUser
+    // ────────────────────────────────────────────────────────────
     const item = new Item({
       title,
       description,
       location,
       imageUrl,
-      // createdBy: req.user?.id // TODO: after adding Auth middleware
+      ownerEmail,
+      tags,
+      createdBy: req.userDoc?._id || null,
     });
 
     const savedItem = await item.save();
-    res.status(201).json(savedItem);
+
+    // ────────────────────────────────────────────────────────────
+    // 4. Respond
+    // ────────────────────────────────────────────────────────────
+    res.status(201).json({
+      ...savedItem.toObject(),
+      tagsSuggested: tags,
+    });
   } catch (err) {
     next(err);
   }
 }
 
+
 // GET /items/:id
 export async function getItemById(req, res, next) {
   try {
-    const item = await Item.findById(req.params.id).populate('createdBy', 'email');
+    const item = await Item.findById(req.params.id)
+      .populate('createdBy', 'email')
+      .populate('claims');
 
     if (!item) {
       return res.status(404).json({ message: 'Item not found' });
     }
 
-    res.json(item);
+    const fixedItem = fixItemImageUrl(item.toObject());
+    res.json(fixedItem);
   } catch (err) {
     next(err);
   }
-} 
+}

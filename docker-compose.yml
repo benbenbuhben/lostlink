@@ -49,15 +49,27 @@ services:
     ports:
       - "5001:5000"
     environment:
+      - NODE_ENV=production
       - MONGO_URI=mongodb://mongo:27017/lostlink
       # MinIO / S3 config (dev)
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
-      - MINIO_BUCKET_NAME=lostlink-dev
-      - MINIO_PUBLIC_URL=http://localhost:9000
+      - MINIO_BUCKET_NAME=lostlink-uploads
+      - MINIO_PUBLIC_URL=http://192.168.254.29:9000 # replace with your MinIO host IP
+      # Auth0 config
+      - AUTH0_DOMAIN=dev-7zwyji3snq5201k3.us.auth0.com
+      - AUTH0_AUDIENCE=https://lostlink-api
+      # Resend config (replaced SendGrid - free tier: 3,000 emails/month)
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - FROM_EMAIL=${FROM_EMAIL}
+      # AWS Rekognition config
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
     volumes:
-      - ./backend:/usr/src/app
+      - ./backend:/usr/src/app:delegated
+      - /usr/src/app/node_modules
     command: npm run dev
     depends_on:
       - mongo

@@ -3,7 +3,8 @@ import mongoose from 'mongoose';
 const claimSchema = new mongoose.Schema(
   {
     itemId: { type: mongoose.Schema.Types.ObjectId, ref: 'Item', required: true },
-    claimerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    claimerId: { type: String },
+    claimerEmail: { type: String, required: true },
     message: { type: String },
     status: {
       type: String,

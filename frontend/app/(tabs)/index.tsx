@@ -1,23 +1,225 @@
 import * as React from 'react';
-import { View, StyleSheet, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
-import { Appbar, Button, Card, Text } from 'react-native-paper';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Dimensions, AppState } from 'react-native';
+import { Appbar, Card, Text, Chip } from 'react-native-paper';
 import { useAuth } from '@/context/AuthContext';
-import { useItems } from '@/hooks/useItems';
+import { useApi } from '../../hooks/useApi';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { LoadingView } from '@/components/LoadingView';
+import { ErrorView } from '@/components/ErrorView';
+import { EmptyStateView } from '@/components/EmptyStateView';
+import RequireAuth from '@/components/RequireAuth';
+
+interface Item {
+  _id: string;
+  title: string;
+  location: string;
+  description?: string;
+  imageUrl?: string;
+  createdAt: string;
+  tags?: string[];
+}
+
+interface ApiResponse {
+  data: Item[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    queryTime?: number;
+  };
+}
+
+const { width: screenWidth } = Dimensions.get('window');
 
 function FeedScreen() {
   const { user, login, logout, ready } = useAuth();
-  const {
-    data,
-    isLoading,
-    error,
-    fetchNextPage,
-    hasNextPage,
-    refetch,
-    isFetchingNextPage,
-  } = useItems();
+  const { get } = useApi();
+  const router = useRouter();
+
+  const [items, setItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loadTime, setLoadTime] = useState<number | null>(null);
+
+  const fetchItems = useCallback(async (silent = false) => {
+    try {
+      const startTime = Date.now();
+      if (!silent) {
+        setLoading(true);
+      }
+      // Only clear error on non-silent refreshes
+      if (!silent) {
+        setError(null);
+      }
+      console.log('Fetching items from API...');
+
+      // Cache optimization with increased limit
+      const response = await get<ApiResponse>('/items?limit=20');
+      console.log('API response:', response);
+
+      const endTime = Date.now();
+      const totalTime = endTime - startTime;
+      setLoadTime(totalTime);
+
+      // Performance logging
+      console.log(`Feed loaded in ${totalTime}ms (Backend: ${response.pagination.queryTime || 'N/A'}ms)`);
+
+      // Remove duplicates based on _id
+      const uniqueItems = response.data?.filter((item, index, self) =>
+        index === self.findIndex(t => t._id === item._id)
+      ) || [];
+
+      // Always update items with the response (even if empty - means no items exist)
+      // Only skip update if this is a silent refresh AND we got an error response
+      if (response && response.data !== undefined) {
+        setItems(uniqueItems);
+        setError(null);
+      } else if (!silent) {
+        // Non-silent refresh with invalid response
+        setError('Invalid response from server');
+      }
+    } catch (err) {
+      console.error('Failed to fetch items:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load items';
+      
+      // Only show error and clear items on non-silent refreshes
+      if (!silent) {
+        setError(errorMessage);
+        // Don't clear items on first load error - keep empty state
+        if (items.length === 0) {
+          setItems([]);
+        }
+      } else {
+        // Silent refresh failed - log but don't change UI
+        console.warn('⚠️ Silent refresh failed:', errorMessage);
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [get, items.length]);
+
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchItems();
+  }, [fetchItems]);
+
+  const handleItemPress = useCallback((itemId: string) => {
+    router.push(`/item/${itemId}`);
+  }, [router]);
+
+  const handleRetry = useCallback(() => {
+    fetchItems();
+  }, [fetchItems]);
+
+  const navigateToReport = useCallback(() => {
+    router.push('/report');
+  }, [router]);
+
+  // Initial load
+  useEffect(() => {
+    fetchItems();
+  }, [fetchItems]);
+
+  // Refresh when tab becomes focused
+  useFocusEffect(
+    useCallback(() => {
+      console.log('🔄 Feed tab focused - refreshing...');
+      fetchItems(true); // Silent refresh
+    }, [fetchItems])
+  );
+
+  // Refresh when app comes to foreground
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'active') {
+        console.log('🔄 App became active - refreshing feed...');
+        fetchItems(true); // Silent refresh
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription?.remove();
+    };
+  }, [fetchItems]);
+
+  // Optimized render item with memoization
+  const renderItem = useCallback(({ item }: { item: Item }) => {
+    const formatDate = (dateString: string) => {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+
+      if (diffInHours < 1) return 'Just now';
+      if (diffInHours < 24) return `${diffInHours}h ago`;
+      return date.toLocaleDateString();
+    };
+
+    return (
+      <TouchableOpacity
+        onPress={() => handleItemPress(item._id)}
+        accessibilityLabel={`View details for ${item.title}`}
+        accessibilityRole="button"
+        testID={`item-${item._id}`}
+      >
+        <Card style={styles.itemCard} elevation={3}>
+          {item.imageUrl && (
+            <Card.Cover
+              source={{ uri: item.imageUrl }}
+              style={styles.itemImage}
+              accessibilityLabel={`Image of ${item.title}`}
+            />
+          )}
+          <Card.Content style={styles.cardContent}>
+            <Text variant="titleMedium" style={styles.itemTitle} numberOfLines={2}>
+              {item.title}
+            </Text>
+            <Text variant="bodySmall" style={styles.itemLocation}>
+              📍 {item.location}
+            </Text>
+            {item.description && (
+              <Text variant="bodySmall" style={styles.itemDescription} numberOfLines={2}>
+                {item.description}
+              </Text>
+            )}
+            {/* auto-tags */}
+            {(item.tags?.length ?? 0) > 0 && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 }}>
+                {(item.tags ?? []).map((tag) => (
+                  <Chip key={tag} mode="outlined" style={{ marginRight: 4, marginBottom: 4 }}>
+                    {tag}
+                  </Chip>
+                ))}
+              </View>
+            )}
+            <Text variant="bodySmall" style={styles.itemDate}>
+              {formatDate(item.createdAt)}
+            </Text>
+          </Card.Content>
+        </Card>
+      </TouchableOpacity>
+    );
+  }, [handleItemPress]);
+
+  // Performance info component
+  const PerformanceInfo = useMemo(() => {
+    if (!loadTime) return null;
+
+    return (
+      <View style={styles.performanceContainer}>
+        <Text variant="bodySmall" style={styles.performanceText}>
+          Loaded {items.length} items in {loadTime}ms
+        </Text>
+      </View>
+    );
+  }, [loadTime, items.length]);
 
   if (!ready) {
-    return null; // Avoid flicker while restoring session
+    return <LoadingView message="Initializing..." />;
   }
 
   if (!user) {
@@ -26,85 +228,83 @@ function FeedScreen() {
         <Appbar.Header>
           <Appbar.Content title="LostLink" />
         </Appbar.Header>
-        <View style={styles.content}>
-          <Card style={styles.card}>
-            <Card.Content>
-              <Text variant="headlineLarge" style={styles.title}>
-                Welcome to LostLink
-              </Text>
-              <Text variant="bodyMedium" style={styles.subtitle}>
-                The easiest way to report, browse, and claim lost &amp; found items in your community.
-              </Text>
-              <Button
-                mode="contained"
-                onPress={login}
-                style={styles.button}
-                contentStyle={{ paddingVertical: 8 }}
-                icon="login"
-              >
-                Login with Auth0
-              </Button>
-            </Card.Content>
-          </Card>
-        </View>
+        <RequireAuth>
+          <View />
+        </RequireAuth>
       </View>
     );
   }
 
-  if (isLoading) {
+  if (loading && !refreshing) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" />
+      <View style={styles.container}>
+        <Appbar.Header>
+          <Appbar.Content title="LostLink" />
+          <Appbar.Action icon="logout" onPress={logout} accessibilityLabel="Logout" />
+        </Appbar.Header>
+        <LoadingView message="Loading latest items..." />
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
-        <Text>Error loading items. Please try again.</Text>
-        <Button mode="contained" onPress={() => refetch()} style={{ marginTop: 12 }}>
-          Retry
-        </Button>
+      <View style={styles.container}>
+        <Appbar.Header>
+          <Appbar.Content title="LostLink" />
+          <Appbar.Action icon="logout" onPress={logout} accessibilityLabel="Logout" />
+        </Appbar.Header>
+        <ErrorView
+          title="Failed to load items"
+          message={error}
+          onRetry={handleRetry}
+        />
       </View>
-    );
-  }
-
-  const items = data?.pages.flatMap((p) => p.data) ?? [];
-
-  function renderItem({ item }: { item: any }) {
-    return (
-      <Card style={{ marginHorizontal: 16, marginVertical: 8 }}>
-        {item.imageUrl ? <Card.Cover source={{ uri: item.imageUrl }} /> : null}
-        <Card.Title title={item.title} subtitle={item.location} />
-        {item.description ? (
-          <Card.Content>
-            <Text>{item.description}</Text>
-          </Card.Content>
-        ) : null}
-      </Card>
     );
   }
 
   return (
     <View style={styles.container}>
       <Appbar.Header>
-        <Appbar.Content title="Feed" />
-        <Appbar.Action icon="refresh" onPress={() => refetch()} />
-        <Appbar.Action icon="logout" onPress={logout} />
+        <Appbar.Content title="LostLink" />
+        <Appbar.Action icon="logout" onPress={logout} accessibilityLabel="Logout" />
       </Appbar.Header>
-      <FlatList
-        data={items}
-        keyExtractor={(item) => item._id}
-        renderItem={renderItem}
-        contentContainerStyle={{ paddingVertical: 8 }}
-        onEndReached={() => hasNextPage && fetchNextPage()}
-        onEndReachedThreshold={0.2}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={() => refetch()} />}
-        ListFooterComponent={
-          isFetchingNextPage ? <ActivityIndicator style={{ marginVertical: 16 }} /> : null
-        }
-      />
+
+      {items.length === 0 ? (
+        <EmptyStateView
+          emoji="📦"
+          title="No items found yet"
+          description="Be the first to report a found item and help someone recover their lost belongings!"
+          actionLabel="Report Found Item"
+          onAction={navigateToReport}
+        />
+      ) : (
+        <>
+          {PerformanceInfo}
+          <FlatList
+            data={items}
+            keyExtractor={(item) => item._id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContainer}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                accessibilityLabel="Pull to refresh"
+              />
+            }
+            showsVerticalScrollIndicator={false}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            windowSize={10}
+            getItemLayout={(data, index) => ({
+              length: 200, // Approximate item height
+              offset: 200 * index,
+              index,
+            })}
+          />
+        </>
+      )}
     </View>
   );
 }
@@ -114,33 +314,49 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f6f6f6",
   },
-  content: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  card: {
-    width: "100%",
-    maxWidth: 400,
-    elevation: 4,
-    borderRadius: 16,
-    paddingVertical: 24,
+  performanceContainer: {
+    backgroundColor: 'white',
     paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
   },
-  title: {
-    marginBottom: 12,
-    textAlign: "center",
+  performanceText: {
+    color: '#666',
+    fontSize: 12,
   },
-  subtitle: {
-    marginBottom: 24,
-    textAlign: "center",
-    color: "#666",
+  itemCard: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
-  button: {
-    alignSelf: "center",
-    borderRadius: 8,
-    minWidth: 160,
+  itemImage: {
+    height: 120,
+  },
+  cardContent: {
+    padding: 16,
+  },
+  itemTitle: {
+    fontWeight: 'bold',
+    marginBottom: 6,
+    color: '#1a1a1a',
+  },
+  itemLocation: {
+    color: '#666',
+    marginBottom: 4,
+  },
+  itemDescription: {
+    color: '#888',
+    marginBottom: 6,
+    lineHeight: 18,
+  },
+  itemDate: {
+    color: '#999',
+    fontSize: 12,
+  },
+  listContainer: {
+    paddingVertical: 8,
   },
 });
 
