@@ -3,6 +3,7 @@ import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
+import { Platform } from 'react-native';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -38,12 +39,32 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     AUTH0_CLIENT_ID?: string;
   };
   const { AUTH0_DOMAIN = '', AUTH0_CLIENT_ID = '' } = extra;
+  function getItem(key: any) {
+
+  if (Platform.OS === 'web') {
+    return Promise.resolve(localStorage.getItem(key));
+  }
+  return SecureStore.getItemAsync(key);
+}
+
+function setItem(key:any, value:any) {
+  if (Platform.OS === 'web') {
+    return localStorage.setItem(key,value);
+  }
+  return SecureStore.setItemAsync(key, value);
+}
+function deleteItem(key:any) {
+  if (Platform.OS === 'web') {
+    return localStorage.removeItem(key);
+  }
+  return SecureStore.deleteItemAsync(key);
+}
 
   React.useEffect(() => {
     (async () => {
       try {
-        const storedToken = await SecureStore.getItemAsync(TOKEN_KEY);
-        const storedUser = await SecureStore.getItemAsync(USER_KEY);
+        const storedToken = await getItem(TOKEN_KEY);
+        const storedUser = await getItem(USER_KEY);
         if (storedToken && storedUser) {
           setAccessToken(storedToken);
           setUser(JSON.parse(storedUser));
@@ -90,8 +111,8 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
         setAccessToken(token);
         setUser(userInfo);
-        await SecureStore.setItemAsync(TOKEN_KEY, token);
-        await SecureStore.setItemAsync(USER_KEY, JSON.stringify(userInfo));
+        await setItem(TOKEN_KEY, token);
+        await setItem(USER_KEY, JSON.stringify(userInfo));
       }
     } catch (err) {
       console.error('Auth0 login failed', err);
@@ -101,8 +122,8 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   async function logout() {
     setUser(null);
     setAccessToken(null);
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-    await SecureStore.deleteItemAsync(USER_KEY);
+    await deleteItem(TOKEN_KEY);
+    await deleteItem(USER_KEY);
   }
 
   return (
