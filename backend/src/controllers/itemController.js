@@ -2,12 +2,36 @@ import Item from '../models/Item.js';
 import uploadToS3 from '../utils/uploadToS3.js';
 import { RekognitionClient, DetectLabelsCommand } from '@aws-sdk/client-rekognition';
 
-const rekognition = new RekognitionClient({ region: process.env.AWS_REGION });
+// Initialize Rekognition client only if AWS credentials are available
+let rekognition = null;
+if (process.env.AWS_REGION && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+  try {
+    rekognition = new RekognitionClient({ 
+      region: process.env.AWS_REGION,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      }
+    });
+    console.log('✅ AWS Rekognition client initialized');
+  } catch (err) {
+    console.warn('⚠️ Failed to initialize Rekognition client:', err.message);
+  }
+} else {
+  console.warn('⚠️ AWS Rekognition not configured - skipping auto-tagging');
+}
 
 // Helper function to fix localhost URLs in image URLs
 export function fixImageUrl(imageUrl) {
   if (!imageUrl) return imageUrl;
-  return imageUrl.replace('http://localhost:9000', 'http://192.168.254.29:9000');
+  // Get the correct MinIO public URL from environment
+  const correctUrl = process.env.MINIO_PUBLIC_URL || 'http://192.168.254.29:9000';
+  
+  // Replace common incorrect URLs
+  return imageUrl
+    .replace(/http:\/\/localhost:9000/g, correctUrl)
+    .replace(/http:\/\/192\.168\.86\.\d+:9000/g, correctUrl)
+    .replace(/http:\/\/192\.168\.\d+\.\d+:9000/g, correctUrl);
 }
 
 // Helper function to fix image URLs in item object
@@ -20,16 +44,28 @@ export function fixItemImageUrl(item) {
 
 // Detect up to 4 high-confidence labels and return them lower-cased
 async function detectTags(buffer) {
-  const cmd = new DetectLabelsCommand({
-    Image: { Bytes: buffer },
-    MaxLabels: 10,
-    MinConfidence: 80,
-  });
-  const { Labels = [] } = await rekognition.send(cmd);
-  return Labels
-    .filter(l => l.Confidence >= 80)
-    .slice(0, 4)
-    .map(l => l.Name.toLowerCase());
+  // Skip if Rekognition is not configured
+  if (!rekognition) {
+    console.log('⚠️ Rekognition not available - skipping tag detection');
+    return [];
+  }
+
+  try {
+    const cmd = new DetectLabelsCommand({
+      Image: { Bytes: buffer },
+      MaxLabels: 10,
+      MinConfidence: 80,
+    });
+    const { Labels = [] } = await rekognition.send(cmd);
+    return Labels
+      .filter(l => l.Confidence >= 80)
+      .slice(0, 4)
+      .map(l => l.Name.toLowerCase());
+  } catch (err) {
+    console.error('❌ Rekognition tag detection failed:', err.message);
+    // Return empty array instead of throwing - don't break item creation
+    return [];
+  }
 }
 
 // GET /items
@@ -159,10 +195,16 @@ export async function createItem(req, res, next) {
       try {
         const { url } = await uploadToS3(req.file);
         imageUrl = url;
-        tags = await detectTags(req.file.buffer);      // Rekognition labels
+        // Try to detect tags, but don't fail if it doesn't work
+        try {
+          tags = await detectTags(req.file.buffer);
+        } catch (tagErr) {
+          console.warn('⚠️ Tag detection failed (continuing without tags):', tagErr.message);
+          tags = []; // Continue without tags
+        }
       } catch (err) {
-        console.error('Failed to upload to S3 or detect tags', err);
-        return res.status(500).json({ message: 'Image upload or tagging failed' });
+        console.error('❌ Failed to upload to S3:', err);
+        return res.status(500).json({ message: 'Image upload failed: ' + err.message });
       }
     }
 

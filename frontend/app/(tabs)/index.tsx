@@ -49,7 +49,10 @@ function FeedScreen() {
       if (!silent) {
         setLoading(true);
       }
-      setError(null);
+      // Only clear error on non-silent refreshes
+      if (!silent) {
+        setError(null);
+      }
       console.log('Fetching items from API...');
 
       // Cache optimization with increased limit
@@ -68,17 +71,35 @@ function FeedScreen() {
         index === self.findIndex(t => t._id === item._id)
       ) || [];
 
-      setItems(uniqueItems);
-      setError(null);
+      // Always update items with the response (even if empty - means no items exist)
+      // Only skip update if this is a silent refresh AND we got an error response
+      if (response && response.data !== undefined) {
+        setItems(uniqueItems);
+        setError(null);
+      } else if (!silent) {
+        // Non-silent refresh with invalid response
+        setError('Invalid response from server');
+      }
     } catch (err) {
       console.error('Failed to fetch items:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load items';
-      setError(errorMessage);
+      
+      // Only show error and clear items on non-silent refreshes
+      if (!silent) {
+        setError(errorMessage);
+        // Don't clear items on first load error - keep empty state
+        if (items.length === 0) {
+          setItems([]);
+        }
+      } else {
+        // Silent refresh failed - log but don't change UI
+        console.warn('⚠️ Silent refresh failed:', errorMessage);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [get]);
+  }, [get, items.length]);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);

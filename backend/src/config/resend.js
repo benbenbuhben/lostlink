@@ -1,17 +1,20 @@
-import sgMail from '@sendgrid/mail';
+import { Resend } from 'resend';
 
-// SendGrid API key configuration
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
-const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@lostlink.app';
+// Resend API key configuration
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+// Note: For testing, use onboarding@resend.dev (no domain verification needed)
+// For production, verify your domain in Resend dashboard
+const FROM_EMAIL = process.env.FROM_EMAIL || 'onboarding@resend.dev';
 
-if (SENDGRID_API_KEY) {
-  sgMail.setApiKey(SENDGRID_API_KEY);
-  console.log('✅ SendGrid initialized successfully');
+let resend = null;
+
+if (RESEND_API_KEY) {
+  resend = new Resend(RESEND_API_KEY);
+  console.log('✅ Resend initialized successfully');
   console.log(`📧 FROM_EMAIL configured: ${FROM_EMAIL}`);
-  console.log(`⚠️ IMPORTANT: Ensure ${FROM_EMAIL} is verified in SendGrid Dashboard`);
-  console.log(`   Go to: Settings → Sender Authentication → Single Sender Verification`);
+  console.log(`ℹ️ Resend free tier: 3,000 emails/month, 100/day`);
 } else {
-  console.warn('⚠️ SENDGRID_API_KEY not found - email functionality disabled');
+  console.warn('⚠️ RESEND_API_KEY not found - email functionality disabled');
 }
 
 /**
@@ -22,10 +25,9 @@ if (SENDGRID_API_KEY) {
  * @param {string} claimerEmail - Claimer's email address (optional)
  */
 export async function sendClaimNotificationEmail(itemOwnerEmail, item, claim, claimerEmail = null) {
-  // Always use real SendGrid (Mock mode removed)
-  if (!SENDGRID_API_KEY) {
-    console.log('📧 Email sending skipped - SendGrid not configured');
-    return { success: false, reason: 'SendGrid not configured' };
+  if (!resend) {
+    console.log('📧 Email sending skipped - Resend not configured');
+    return { success: false, reason: 'Resend not configured' };
   }
 
   try {
@@ -89,47 +91,40 @@ Next Steps:
 This email was sent by LostLink - Connecting lost items with their owners
     `;
 
-    const msg = {
-      to: itemOwnerEmail,
-      from: FROM_EMAIL,
-      subject: subject,
-      text: textContent,
-      html: htmlContent,
-    };
-
-    console.log(`📧 Sending claim notification email to: ${itemOwnerEmail} via SendGrid`);
+    console.log(`📧 Sending claim notification email to: ${itemOwnerEmail} via Resend`);
     console.log(`📧 From: ${FROM_EMAIL}`);
     const startTime = Date.now();
     
-    const response = await sgMail.send(msg);
+    const { data, error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: itemOwnerEmail,
+      subject: subject,
+      html: htmlContent,
+      text: textContent,
+    });
     
     const endTime = Date.now();
     const deliveryTime = endTime - startTime;
     
-    // Log detailed SendGrid response
-    console.log(`📧 SendGrid Response Status: ${response[0]?.statusCode || 'unknown'}`);
-    console.log(`📧 SendGrid Response Headers:`, JSON.stringify(response[0]?.headers || {}, null, 2));
-    console.log(`📧 SendGrid Response Body:`, JSON.stringify(response[0]?.body || {}, null, 2));
-    
-    // Check if email was actually accepted
-    const statusCode = response[0]?.statusCode;
-    const isSuccess = statusCode >= 200 && statusCode < 300;
-    
-    if (isSuccess) {
-      console.log(`✅ SendGrid email accepted (status: ${statusCode}) in ${deliveryTime}ms`);
-      console.log(`📧 Note: Check SendGrid dashboard to verify actual delivery`);
-    } else {
-      console.warn(`⚠️ SendGrid returned non-success status: ${statusCode}`);
+    if (error) {
+      console.error('❌ Resend error:', error);
+      return {
+        success: false,
+        error: error.message || 'Unknown error',
+        details: error
+      };
     }
     
+    console.log(`✅ Resend email sent successfully in ${deliveryTime}ms`);
+    console.log(`📧 Email ID: ${data?.id || 'N/A'}`);
+    
     return { 
-      success: isSuccess, 
+      success: true, 
       deliveryTime,
       recipient: itemOwnerEmail,
       subject,
-      service: 'SendGrid',
-      statusCode: statusCode,
-      response: response[0]?.body || null
+      service: 'Resend',
+      emailId: data?.id
     };
 
   } catch (error) {
@@ -137,33 +132,10 @@ This email was sent by LostLink - Connecting lost items with their owners
     console.error('❌ Error name:', error.name);
     console.error('❌ Error message:', error.message);
     
-    // SendGrid specific error handling
-    if (error.response) {
-      console.error('❌ SendGrid Error Status:', error.response.statusCode);
-      console.error('❌ SendGrid Error Headers:', JSON.stringify(error.response.headers || {}, null, 2));
-      console.error('❌ SendGrid Error Body:', JSON.stringify(error.response.body || {}, null, 2));
-      
-      // Common SendGrid errors
-      if (error.response.body?.errors) {
-        error.response.body.errors.forEach((err, idx) => {
-          console.error(`❌ SendGrid Error ${idx + 1}:`, err.message);
-          console.error(`   Field: ${err.field || 'N/A'}, Help: ${err.help || 'N/A'}`);
-        });
-      }
-    }
-    
-    // Check for common issues
-    if (error.message?.includes('sender')) {
-      console.error('⚠️ Possible issue: FROM_EMAIL not verified in SendGrid');
-      console.error('   Solution: Verify sender email in SendGrid Dashboard → Settings → Sender Authentication');
-    }
-    
     return { 
       success: false, 
       error: error.message,
-      statusCode: error.response?.statusCode,
-      details: error.response?.body,
-      errors: error.response?.body?.errors || []
+      details: error
     };
   }
 }
@@ -176,8 +148,8 @@ This email was sent by LostLink - Connecting lost items with their owners
  * @param {string} status - New status ('approved' or 'rejected')
  */
 export async function sendClaimStatusUpdateEmail(claimerEmail, item, claim, status) {
-  if (!SENDGRID_API_KEY || !claimerEmail) {
-    return { success: false, reason: 'SendGrid not configured or no claimer email' };
+  if (!resend || !claimerEmail) {
+    return { success: false, reason: 'Resend not configured or no claimer email' };
   }
 
   try {
@@ -231,17 +203,20 @@ export async function sendClaimStatusUpdateEmail(claimerEmail, item, claim, stat
       </div>
     `;
 
-    const msg = {
-      to: claimerEmail,
+    const { data, error } = await resend.emails.send({
       from: FROM_EMAIL,
+      to: claimerEmail,
       subject: subject,
       html: htmlContent,
-    };
+    });
 
-    await sgMail.send(msg);
+    if (error) {
+      console.error('❌ Failed to send status update email:', error);
+      return { success: false, error: error.message };
+    }
+
     console.log(`✅ Status update email sent to claimer: ${claimerEmail}`);
-    
-    return { success: true };
+    return { success: true, emailId: data?.id };
 
   } catch (error) {
     console.error('❌ Failed to send status update email:', error);
@@ -249,4 +224,5 @@ export async function sendClaimStatusUpdateEmail(claimerEmail, item, claim, stat
   }
 }
 
-export default sgMail; 
+export default resend;
+

@@ -16,7 +16,7 @@ export const authenticate = (req, res, next) => {
 
   // Actual JWT verification middleware
   const jwtCheck = auth({
-    issuerBaseURL: `https://${AUTH0_DOMAIN}`,
+    issuerBaseURL: `https://${AUTH0_DOMAIN}/`,
     audience: AUTH0_AUDIENCE,
     tokenSigningAlg: 'RS256',
     allowAnonymous: true, // Allow requests without token

@@ -1,7 +1,7 @@
 import Claim from '../models/Claim.js';
 import Item from '../models/Item.js';
 import User from '../models/User.js';
-import { sendClaimNotificationEmail } from '../config/sendgrid.js';
+import { sendClaimNotificationEmail } from '../config/resend.js';
 
 // POST /items/:id/claim
 export async function createClaim(req, res, next) {
@@ -85,12 +85,23 @@ export async function createClaim(req, res, next) {
             email.trim()  // Claimer email
           );
           
-          console.log('📧 Email notification result:', emailResult);
+          console.log('📧 Email notification result:', JSON.stringify(emailResult, null, 2));
           
           // Email delivery time logging (requirement 5.5)
           if (emailResult.success && emailResult.deliveryTime) {
             const isUnderOneMinute = emailResult.deliveryTime < 60000;
             console.log(`⏱️ Email delivery time: ${emailResult.deliveryTime}ms ${isUnderOneMinute ? '✅' : '⚠️ SLOW'}`);
+          } else if (!emailResult.success) {
+            console.error('❌ Email sending failed:', emailResult.error);
+            if (emailResult.errors && emailResult.errors.length > 0) {
+              emailResult.errors.forEach((err, idx) => {
+                console.error(`   Error ${idx + 1}: ${err.message}`);
+              });
+            }
+            if (emailResult.error?.includes('sender') || emailResult.error?.includes('verified')) {
+              console.error('⚠️ LIKELY ISSUE: FROM_EMAIL not verified in Resend');
+              console.error('   Fix: Verify sender email in Resend Dashboard');
+            }
           }
         } catch (emailError) {
           console.error('❌ Background email sending failed:', emailError);

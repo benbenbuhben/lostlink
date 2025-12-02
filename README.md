@@ -93,7 +93,8 @@ Example root `.env`:
 
 ```
 MONGO_URI=mongodb://mongo:27017/lostlink
-SENDGRID_API_KEY=…
+RESEND_API_KEY=re_jbsMJVYw_N6hpajzdThHHby9JDJFawfEM
+FROM_EMAIL=rackoon1030@gmail.com
 AUTH0_DOMAIN=…
 AUTH0_CLIENT_ID=…
 
@@ -105,6 +106,8 @@ AWS_REGION=us-west-2
 # Public URL for MinIO objects (replace with your LAN IP)
 MINIO_PUBLIC_URL=http://192.168.x.x:9000
 ```
+
+**Note:** See [RESEND_SETUP.md](./RESEND_SETUP.md) for Resend email service setup (replaced SendGrid - free tier: 3,000 emails/month).
 
 ---
 
@@ -122,16 +125,44 @@ docker compose exec backend npm run seed   # uses faker to generate users + item
 
 ---
 
-## 6 – Project Status
+## 6 – Web Deployment
 
-* ✅ Feed tab live with React-Query infinite scroll  
-* ✅ Image auto-tagging with AWS Rekognition and tag-aware search  
-* 🟡 Auth0 login working (backend JWT verification pending)  
-* 🔜 Report form & claim flow
+**Note**: Mobile app is not deployed. Use screenshots for GitHub demo.
+
+### Quick Deploy to Vercel
+
+```bash
+cd frontend
+npm run build:web
+vercel --prod
+```
+
+See [WEB_DEPLOYMENT.md](./WEB_DEPLOYMENT.md) for detailed deployment instructions (Vercel, Netlify, GitHub Pages).
+
+### Environment Variables for Production
+
+Set these in your deployment platform:
+
+- `EXPO_PUBLIC_API_URL` - Your backend API URL (HTTPS)
+- `EXPO_PUBLIC_AUTH0_DOMAIN` - Auth0 domain
+- `EXPO_PUBLIC_AUTH0_CLIENT_ID` - Auth0 client ID
+- `EXPO_PUBLIC_AUTH0_REDIRECT_URI` - Your deployed web app URL
+- `EXPO_PUBLIC_AUTH0_AUDIENCE` - Auth0 audience
 
 ---
 
-## 7 – Contributing / Branch Flow
+## 7 – Project Status
+
+* ✅ Feed tab live with React-Query infinite scroll  
+* ✅ Image auto-tagging with AWS Rekognition and tag-aware search  
+* ✅ Auth0 login working (frontend + backend JWT verification)  
+* ✅ Report form & claim flow with SendGrid email integration
+* ✅ Responsive UI & mobile-first design
+* ✅ Web deployment ready (see WEB_DEPLOYMENT.md)
+
+---
+
+## 8 – Contributing / Branch Flow
 
 1. Create a feature branch – `git checkout -b feat/<short-feature>`
 2. Commit early & often.
