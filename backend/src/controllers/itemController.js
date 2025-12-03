@@ -1,6 +1,10 @@
 import Item from '../models/Item.js';
 import uploadToS3 from '../utils/uploadToS3.js';
 import { RekognitionClient, DetectLabelsCommand } from '@aws-sdk/client-rekognition';
+import dotenv from 'dotenv';
+
+// Ensure .env is loaded (in case this module is imported before dotenv.config() in index.js)
+dotenv.config();
 
 // Initialize Rekognition client only if AWS credentials are available
 let rekognition = null;

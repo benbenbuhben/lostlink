@@ -247,7 +247,7 @@ pm2 logs lostlink-backend
 ---
 
 ## Step 6: Nginx 설정 (리버스 프록시)
-
+::
 ### 6.1 Nginx 설치
 
 ```bash

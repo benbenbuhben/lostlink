@@ -1,4 +1,8 @@
 import { Resend } from 'resend';
+import dotenv from 'dotenv';
+
+// Ensure .env is loaded (in case this module is imported before dotenv.config() in index.js)
+dotenv.config();
 
 // Resend API key configuration
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
