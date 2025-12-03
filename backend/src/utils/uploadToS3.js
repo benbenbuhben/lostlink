@@ -25,12 +25,25 @@ export default async function uploadToS3(file) {
     ],
   };
 
+  // Check if bucket exists (AWS S3 requires bucket to be pre-created)
+  // MinIO can auto-create, but we'll check first
+  const isMinIO = process.env.MINIO_ENDPOINT && 
+                  (process.env.MINIO_ENDPOINT.includes('minio') || 
+                   process.env.MINIO_ENDPOINT.includes('localhost') ||
+                   process.env.MINIO_ENDPOINT.includes('192.168'));
+
   try {
     await s3Client.send(new HeadBucketCommand({ Bucket: bucket }));
   } catch (err) {
     if (err?.$metadata?.httpStatusCode === 404 || err.Code === 'NotFound' || err.Code === 'NoSuchBucket') {
-      console.log(`Bucket ${bucket} does not exist – creating...`);
-      await s3Client.send(new CreateBucketCommand({ Bucket: bucket }));
+      if (isMinIO) {
+        // MinIO: auto-create bucket
+        console.log(`Bucket ${bucket} does not exist – creating...`);
+        await s3Client.send(new CreateBucketCommand({ Bucket: bucket }));
+      } else {
+        // AWS S3: bucket must be pre-created
+        throw new Error(`Bucket ${bucket} does not exist. Please create it in AWS S3 Console first.`);
+      }
     } else {
       throw err;
     }
@@ -55,7 +68,18 @@ export default async function uploadToS3(file) {
   await s3Client.send(cmd);
   console.log(`File uploaded to ${bucket}/${key}`);
 
-  const baseUrl = process.env.MINIO_PUBLIC_URL || process.env.MINIO_ENDPOINT;
-  const publicUrl = `${baseUrl.replace(/\/$/, '')}/${bucket}/${key}`;
+  // Generate public URL based on storage type
+  let publicUrl;
+  if (isMinIO) {
+    // MinIO: use MINIO_PUBLIC_URL or MINIO_ENDPOINT
+    const baseUrl = process.env.MINIO_PUBLIC_URL || process.env.MINIO_ENDPOINT;
+    publicUrl = `${baseUrl.replace(/\/$/, '')}/${bucket}/${key}`;
+  } else {
+    // AWS S3: use standard S3 URL format
+    const region = process.env.MINIO_REGION || 'us-east-1';
+    const baseUrl = process.env.MINIO_PUBLIC_URL || `https://${bucket}.s3.${region}.amazonaws.com`;
+    publicUrl = `${baseUrl.replace(/\/$/, '')}/${key}`;
+  }
+
   return { key, url: publicUrl };
 } 

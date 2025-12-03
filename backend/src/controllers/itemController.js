@@ -21,13 +21,20 @@ if (process.env.AWS_REGION && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_S
   console.warn('⚠️ AWS Rekognition not configured - skipping auto-tagging');
 }
 
-// Helper function to fix localhost URLs in image URLs
+// Helper function to fix image URLs (MinIO localhost → correct URL)
 export function fixImageUrl(imageUrl) {
   if (!imageUrl) return imageUrl;
-  // Get the correct MinIO public URL from environment
-  const correctUrl = process.env.MINIO_PUBLIC_URL || 'http://192.168.254.29:9000';
   
-  // Replace common incorrect URLs
+  // If URL already looks like AWS S3 or valid URL, return as-is
+  if (imageUrl.includes('amazonaws.com') || imageUrl.startsWith('https://')) {
+    return imageUrl;
+  }
+  
+  // Only fix MinIO localhost URLs
+  const correctUrl = process.env.MINIO_PUBLIC_URL;
+  if (!correctUrl) return imageUrl;
+  
+  // Replace common incorrect MinIO URLs
   return imageUrl
     .replace(/http:\/\/localhost:9000/g, correctUrl)
     .replace(/http:\/\/192\.168\.86\.\d+:9000/g, correctUrl)

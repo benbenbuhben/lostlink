@@ -1,7 +1,23 @@
 import dotenv from 'dotenv';
-import app from './src/app.js';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { existsSync } from 'fs';
 
-dotenv.config();
+// Get current directory for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load .env file with explicit path
+const envPath = join(__dirname, '.env');
+if (existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+  console.log('✅ Loaded .env file from:', envPath);
+} else {
+  console.warn('⚠️ .env file not found at:', envPath);
+  dotenv.config(); // Fallback to default location
+}
+
+import app from './src/app.js';
 
 const port = process.env.PORT || 5000;
 const host = '0.0.0.0'; // Allow external connections

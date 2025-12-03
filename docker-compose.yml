@@ -51,12 +51,13 @@ services:
     environment:
       - NODE_ENV=production
       - MONGO_URI=mongodb://mongo:27017/lostlink
-      # MinIO / S3 config (dev)
-      - MINIO_ENDPOINT=http://minio:9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
-      - MINIO_BUCKET_NAME=lostlink-uploads
-      - MINIO_PUBLIC_URL=http://192.168.254.29:9000 # replace with your MinIO host IP
+      # AWS S3 config (or MinIO for local dev)
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME:-lostlink-uploads}
+      - MINIO_REGION=${MINIO_REGION:-us-west-2}
+      - MINIO_PUBLIC_URL=${MINIO_PUBLIC_URL:-http://192.168.254.29:9000}
       # Auth0 config
       - AUTH0_DOMAIN=dev-7zwyji3snq5201k3.us.auth0.com
       - AUTH0_AUDIENCE=https://lostlink-api

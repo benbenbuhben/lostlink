@@ -53,7 +53,13 @@ export function useApi() {
       
       if (!r.ok) {
         const errorText = await r.text();
-        console.error(`❌ HTTP Error: ${r.status} - ${errorText}`);
+        // 401 Unauthorized는 예상된 에러 (로그인하지 않은 상태)
+        // 조용히 처리하되, 다른 에러는 로깅
+        if (r.status === 401) {
+          console.log(`ℹ️ 401 Unauthorized (expected if not logged in)`);
+        } else {
+          console.error(`❌ HTTP Error: ${r.status} - ${errorText}`);
+        }
         throw new Error(`HTTP ${r.status}: ${r.statusText}`);
       }
       

@@ -12,7 +12,7 @@ This repository contains a full-stack MVP built with:
 
 * Docker Desktop (or Docker Engine + Docker Compose V2)
 * (Optional) Node 18 + npm if you want to run services outside Docker
-* An AWS account with Rekognition enabled (for image auto-tagging)
+* **AWS account with Rekognition enabled** (REQUIRED for image auto-tagging - MVP core feature)
 
 ---
 

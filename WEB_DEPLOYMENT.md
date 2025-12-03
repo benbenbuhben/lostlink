@@ -248,9 +248,9 @@ git push heroku main
 - `AUTH0_AUDIENCE` - Auth0 audience
 - `RESEND_API_KEY` - (Optional) Resend API key (free tier: 3,000 emails/month)
 - `FROM_EMAIL` - (Optional) Email sender address
-- `AWS_ACCESS_KEY_ID` - (Optional) AWS Rekognition
-- `AWS_SECRET_ACCESS_KEY` - (Optional) AWS Rekognition
-- `AWS_REGION` - (Optional) AWS region
+- `AWS_ACCESS_KEY_ID` - **REQUIRED** AWS Rekognition (for image auto-tagging - MVP core feature)
+- `AWS_SECRET_ACCESS_KEY` - **REQUIRED** AWS Rekognition
+- `AWS_REGION` - **REQUIRED** AWS region (e.g., us-west-2)
 
 ---
 
@@ -258,9 +258,15 @@ git push heroku main
 
 1. **Web App**: Visit your deployed URL
 2. **Login**: Test Auth0 authentication
-3. **Create Item**: Test image upload
-4. **Search**: Test search functionality
-5. **Claim**: Test claim submission (email won't send without SendGrid)
+3. **Create Item with Image**: 
+   - Upload an image (e.g., phone, wallet, keys)
+   - **Verify auto-tags**: Check response for `tagsSuggested` array
+   - Tags should be automatically detected (e.g., ["phone", "electronics"])
+4. **Search by Tags**: 
+   - Search for auto-detected tags (e.g., "phone", "wallet")
+   - Items should be findable by their auto-tags
+5. **Search Functionality**: Test text search
+6. **Claim**: Test claim submission (email won't send without Resend API key)
 
 ---
 
@@ -283,6 +289,20 @@ git push heroku main
 - Check backend CORS settings allow your web domain
 - Ensure backend is deployed and running
 
+### Image auto-tagging not working
+
+- **Check backend logs** for:
+  - `✅ AWS Rekognition client initialized` (should see this)
+  - `⚠️ AWS Rekognition not configured` (means env vars missing)
+- **Verify all 3 AWS environment variables are set**:
+  - `AWS_ACCESS_KEY_ID`
+  - `AWS_SECRET_ACCESS_KEY`
+  - `AWS_REGION`
+- **Check IAM permissions**: User must have `AmazonRekognitionReadOnlyAccess` policy
+- **Test Rekognition access**: Try creating an item with an image
+  - If tags are empty `[]`, check backend logs for Rekognition errors
+  - Common errors: Invalid credentials, region mismatch, IAM permission denied
+
 ---
 
 ## Mobile App Screenshots for GitHub
@@ -299,10 +319,99 @@ Add these screenshots to your GitHub README to demonstrate mobile functionality.
 
 ---
 
+---
+
+## AWS Rekognition Setup (REQUIRED for MVP)
+
+Image auto-tagging is a **core MVP feature**. Follow these steps to enable it:
+
+### Step 1: Create AWS Account (if you don't have one)
+
+1. Go to [AWS Console](https://console.aws.amazon.com/)
+2. Sign up for free tier (12 months free, then pay-as-you-go)
+
+### Step 2: Enable Rekognition Service
+
+1. AWS Console → **Rekognition** service
+2. Click **Get started** (no additional setup needed)
+3. Rekognition is now enabled in your account
+
+### Step 3: Create IAM User for Rekognition Access
+
+1. AWS Console → **IAM** → **Users** → **Create user**
+2. User name: `lostlink-rekognition-user`
+3. **Attach policies directly** → Search for `AmazonRekognitionReadOnlyAccess`
+4. Click **Next** → **Create user**
+
+### Step 4: Create Access Keys
+
+1. Click on the user you just created
+2. **Security credentials** tab → **Create access key**
+3. **Use case**: Application running outside AWS
+4. **Description**: LostLink backend - Rekognition access
+5. Click **Create access key**
+6. **IMPORTANT**: Copy both:
+   - **Access Key ID**
+   - **Secret Access Key** (shown only once!)
+
+### Step 5: Set Environment Variables in Backend
+
+In Railway/Render/Heroku, add these environment variables:
+
+```
+AWS_ACCESS_KEY_ID=your-access-key-id-here
+AWS_SECRET_ACCESS_KEY=your-secret-access-key-here
+AWS_REGION=us-west-2
+```
+
+**Recommended regions:**
+- `us-west-2` (Oregon) - Recommended
+- `us-east-1` (N. Virginia)
+- `eu-west-1` (Ireland)
+
+### Step 6: Verify Rekognition is Working
+
+After deployment, check backend logs for:
+```
+✅ AWS Rekognition client initialized
+```
+
+If you see:
+```
+⚠️ AWS Rekognition not configured - skipping auto-tagging
+```
+
+Then check:
+1. All 3 environment variables are set correctly
+2. No typos in the keys
+3. IAM user has `AmazonRekognitionReadOnlyAccess` policy
+
+### Rekognition Pricing (Free Tier)
+
+- **Free Tier**: 5,000 images/month for first 12 months
+- **After free tier**: $1.00 per 1,000 images
+- **For MVP/Portfolio**: Free tier is more than enough
+
+### Testing Image Auto-Tagging
+
+1. Deploy backend with AWS credentials
+2. Create an item with an image via frontend
+3. Check the response - should include `tagsSuggested` array:
+   ```json
+   {
+     "title": "Lost iPhone",
+     "tags": ["phone", "electronics", "mobile phone", "smartphone"],
+     "tagsSuggested": ["phone", "electronics", "mobile phone", "smartphone"]
+   }
+   ```
+4. Search by tags - items should be findable by auto-detected tags
+
+---
+
 ## Notes
 
 - **Resend**: Email notifications won't work without a valid Resend API key. Free tier: 3,000 emails/month, 100/day. See [RESEND_SETUP.md](./RESEND_SETUP.md) for setup.
-- **AWS Rekognition**: Image tagging won't work without AWS credentials
+- **AWS Rekognition**: **REQUIRED** for MVP - Image auto-tagging is a core feature. See setup guide above.
 - **MinIO**: In production, use AWS S3 or similar instead of local MinIO
 - **MongoDB**: Use MongoDB Atlas for production database
 
