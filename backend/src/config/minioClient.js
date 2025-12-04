@@ -8,15 +8,22 @@ const isMinIO = process.env.MINIO_ENDPOINT &&
                  process.env.MINIO_ENDPOINT.includes('127.0.0.1'));
 
 // AWS S3 credentials 확인 (없어도 앱은 시작되도록)
-const accessKeyId = process.env.MINIO_ACCESS_KEY;
-const secretAccessKey = process.env.MINIO_SECRET_KEY;
+// trim()으로 앞뒤 공백 제거
+const accessKeyId = process.env.MINIO_ACCESS_KEY?.trim();
+const secretAccessKey = process.env.MINIO_SECRET_KEY?.trim();
 
 let s3Client = null;
 
 // Credentials가 있으면 S3Client 생성, 없으면 null (나중에 업로드 시 에러 발생)
 if (accessKeyId && secretAccessKey) {
+  // 디버깅: credentials 길이 확인 (실제 값은 로그하지 않음)
+  console.log('🔑 AWS S3 credentials found');
+  console.log('   Access Key length:', accessKeyId.length);
+  console.log('   Secret Key length:', secretAccessKey.length);
+  console.log('   Region:', process.env.MINIO_REGION || 'us-east-1');
+  
   const s3Config = {
-    region: process.env.MINIO_REGION || 'us-east-1',
+    region: process.env.MINIO_REGION?.trim() || 'us-east-1',
     credentials: {
       accessKeyId: accessKeyId,
       secretAccessKey: secretAccessKey,
