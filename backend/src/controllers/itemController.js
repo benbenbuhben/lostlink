@@ -215,7 +215,18 @@ export async function createItem(req, res, next) {
         }
       } catch (err) {
         console.error('❌ Failed to upload to S3:', err);
-        return res.status(500).json({ message: 'Image upload failed: ' + err.message });
+        console.error('❌ Error details:', {
+          message: err.message,
+          code: err.code,
+          name: err.name,
+          stack: err.stack,
+        });
+        const errorMessage = err.message || err.code || err.name || 'UnknownError';
+        return res.status(500).json({ 
+          message: 'Image upload failed: ' + errorMessage,
+          error: errorMessage,
+          details: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+        });
       }
     }
 

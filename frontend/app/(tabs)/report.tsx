@@ -219,9 +219,18 @@ function ReportScreen() {
 
         if (Platform.OS === 'web') {
           // Convert the blob: URI to a real File so the browser can send it
-          const fetched = await fetch(imageUri);
-          const blob = await fetched.blob();
-          fileForForm = new File([blob], filename, { type });
+          // Safari requires explicit MIME type handling
+          try {
+            const fetched = await fetch(imageUri);
+            const blob = await fetched.blob();
+            // Ensure correct MIME type for Safari
+            const finalType = blob.type || type || 'image/jpeg';
+            fileForForm = new File([blob], filename, { type: finalType });
+            console.log('📷 File created for web:', { filename, type: finalType, size: blob.size });
+          } catch (err) {
+            console.error('❌ Failed to create File object:', err);
+            throw new Error('Failed to prepare image for upload');
+          }
         } else {
           // Native (iOS / Android) still uses the RN-style object
           fileForForm = { uri: imageUri, name: filename, type };
