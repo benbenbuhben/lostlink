@@ -41,10 +41,7 @@ if (accessKeyId && secretAccessKey) {
   }
 
   s3Client = new S3Client(s3Config);
-} else {
-  console.warn('⚠️ AWS S3 credentials not configured - image upload will fail');
-  console.warn('   MINIO_ACCESS_KEY:', accessKeyId ? '***set***' : 'NOT SET');
-  console.warn('   MINIO_SECRET_KEY:', secretAccessKey ? '***set***' : 'NOT SET');
 }
+// Credentials가 없으면 조용히 null로 두기 (업로드 시점에 에러 발생)
 
 export default s3Client; 

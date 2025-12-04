@@ -67,12 +67,12 @@
 - [~] Auth flow & AuthContext. _(frontend complete; backend token validation pending)_
 - [x] Feed list (mock → API).
 - [x] Report form (photo upload via MinIO).
-- [ ] Item detail & claim POST.
-- [ ] Search / filter UI.
-- [ ] WebSocket real-time updates.
-- [ ] Polish (loading skeletons, pull-to-refresh, empty/error states).
-- [ ] Accessibility & dark mode QA.
-- [ ] End-to-end happy-path test.
+- [x] Item detail & claim POST.
+- [x] Search / filter UI.
+- [.] WebSocket real-time updates.
+- [x] Polish (loading skeletons, pull-to-refresh, empty/error states).
+- [x] Accessibility & dark mode QA.
+- [x] End-to-end happy-path test.
 
 ## 8. Acceptance Criteria Trace
 | PRD Section | Covered By |
