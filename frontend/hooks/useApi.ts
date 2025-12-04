@@ -1,24 +1,34 @@
 import { useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 
-// API URL 설정: 환경변수 또는 프로덕션 기본값 사용
+// API URL 설정: 런타임에 결정
 // 프로덕션에서는 https://api.thomasha.dev 사용
 // 로컬 개발에서는 환경변수 또는 기본 로컬 IP 사용
-const getDefaultUrl = () => {
-  // 프로덕션 환경 감지 (Vercel 배포 환경)
-  if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
-    return 'https://api.thomasha.dev';
+const getApiUrl = () => {
+  // 1. 환경변수가 있으면 우선 사용
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, '');
   }
-  // 로컬 개발 환경
+  
+  // 2. 런타임에 프로덕션 환경 감지 (Vercel 배포 환경)
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname.includes('vercel.app') || hostname.includes('thomasha.dev')) {
+      return 'https://api.thomasha.dev';
+    }
+  }
+  
+  // 3. 로컬 개발 환경 기본값
   return 'http://192.168.254.29:5001';
 };
 
-const RAW_URL = process.env.EXPO_PUBLIC_API_URL ?? getDefaultUrl();
-const API_URL = RAW_URL.replace(/\/+$/, ''); // Remove trailing slash
+// 런타임에 API URL 결정
+const API_URL = getApiUrl();
 
-// 빌드 시점에 API URL 로그 (디버깅용)
+// 디버깅 로그
 if (typeof window !== 'undefined') {
   console.log('🌐 API URL configured:', API_URL);
+  console.log('🌐 Hostname:', window.location.hostname);
   console.log('🌐 EXPO_PUBLIC_API_URL from env:', process.env.EXPO_PUBLIC_API_URL || 'not set');
 }
 
@@ -28,8 +38,8 @@ export function useApi() {
   /* 현재 로그인 토큰 */
   const { accessToken } = useAuth();
 
-  /* baseUrl은 한 번만 계산 */
-  const [baseUrl] = useState(API_URL);
+  /* baseUrl은 런타임에 계산 (프로덕션 환경 감지) */
+  const [baseUrl] = useState(() => getApiUrl());
 
   /* 공통 헤더 생성기 */
   const hdr = useCallback(
