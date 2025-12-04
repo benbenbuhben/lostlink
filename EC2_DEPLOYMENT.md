@@ -298,18 +298,41 @@ sudo systemctl enable nginx
 
 ### 6.3 방화벽 설정
 
+**⚠️ 중요**: EC2는 **AWS Security Groups**로 방화벽을 관리합니다. 인스턴스 내부의 방화벽 설정은 **선택사항**입니다.
+
+**AWS Security Groups 설정 (필수 - Step 8 참고)**:
+- EC2 인스턴스 생성 시 "Allow HTTP/HTTPS traffic"을 체크했다면 이미 설정됨
+- 추가 설정은 **Step 8: 보안 그룹 설정** 참고
+
+**인스턴스 내부 방화벽 (선택사항)**:
+
+만약 인스턴스 내부 방화벽을 설정하려면:
+
+**Amazon Linux 2023**:
 ```bash
-# HTTP/HTTPS 포트 열기
+# firewalld 설치 확인
+sudo systemctl status firewalld
+
+# firewalld가 없으면 설치
+sudo dnf install -y firewalld
+sudo systemctl start firewalld
+sudo systemctl enable firewalld
+
+# 포트 열기
 sudo firewall-cmd --permanent --add-service=http
 sudo firewall-cmd --permanent --add-service=https
 sudo firewall-cmd --reload
+```
 
-# 또는 Ubuntu
+**Ubuntu**:
+```bash
 sudo ufw allow 80
 sudo ufw allow 443
 sudo ufw allow 22  # SSH
 sudo ufw enable
 ```
+
+**참고**: Security Groups가 이미 설정되어 있다면 인스턴스 내부 방화벽은 설정하지 않아도 됩니다!
 
 ---
 
