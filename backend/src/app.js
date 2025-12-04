@@ -18,22 +18,28 @@ connectDB();
 
 // Global middlewares
 // CORS 설정: 프로덕션에서는 Vercel 도메인만 허용, 개발환경에서는 모든 origin 허용
-const allowedOrigins = process.env.FRONTEND_URL 
-  ? [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:19006']
-  : ['http://localhost:3000', 'http://localhost:19006', '*'];
-
 app.use(cors({
   origin: function (origin, callback) {
     // 개발환경 또는 origin이 없으면 허용 (같은 origin 요청)
     if (!origin || process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
-    // 프로덕션: Vercel 도메인 허용
-    if (origin.includes('vercel.app') || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    // 프로덕션: Vercel 도메인 자동 허용
+    if (origin.includes('vercel.app')) {
+      return callback(null, true);
     }
+    // FRONTEND_URL 환경변수가 있으면 그것도 허용
+    if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) {
+      return callback(null, true);
+    }
+    // 기본 허용 origin들
+    const allowed = ['http://localhost:3000', 'http://localhost:19006'];
+    if (allowed.includes(origin)) {
+      return callback(null, true);
+    }
+    // 허용되지 않은 origin
+    console.warn('⚠️ CORS blocked origin:', origin);
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -42,15 +48,10 @@ app.use(cors({
   maxAge: 86400, // 24시간 - 사파리 preflight 캐싱
 }));
 
-// OPTIONS 요청은 CORS에서 처리하고 바로 응답
-app.options('*', (req, res) => {
-  res.sendStatus(200);
-});
-
 app.use(express.json());
 app.use(morgan('dev'));
 
-// OPTIONS 요청은 인증 미들웨어를 건너뛰기
+// OPTIONS 요청은 인증 미들웨어를 건너뛰기 (CORS preflight)
 app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
