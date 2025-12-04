@@ -1,6 +1,6 @@
 import { PutObjectCommand, HeadBucketCommand, CreateBucketCommand, PutBucketPolicyCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
-import getS3Client from '../config/minioClient.js';
+import s3Client from '../config/minioClient.js';
 
 export default async function uploadToS3(file) {
   // file: { buffer, originalname, mimetype }
@@ -9,8 +9,10 @@ export default async function uploadToS3(file) {
     throw new Error('MINIO_BUCKET_NAME not set');
   }
 
-  // Get S3 client (lazy initialization)
-  const s3Client = getS3Client();
+  // S3Client가 없으면 (credentials가 설정되지 않았으면) 에러
+  if (!s3Client) {
+    throw new Error('AWS S3 credentials (MINIO_ACCESS_KEY, MINIO_SECRET_KEY) must be set in environment variables');
+  }
 
   const ext = file.originalname.split('.').pop();
   const key = `${uuidv4()}.${ext}`;
