@@ -28,8 +28,8 @@ app.use(cors({
     if (!origin || process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
-    // 프로덕션: 허용된 origin만 허용
-    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+    // 프로덕션: Vercel 도메인 허용
+    if (origin.includes('vercel.app') || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -41,8 +41,22 @@ app.use(cors({
   exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
   maxAge: 86400, // 24시간 - 사파리 preflight 캐싱
 }));
+
+// OPTIONS 요청은 CORS에서 처리하고 바로 응답
+app.options('*', (req, res) => {
+  res.sendStatus(200);
+});
+
 app.use(express.json());
 app.use(morgan('dev'));
+
+// OPTIONS 요청은 인증 미들웨어를 건너뛰기
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 app.use(authenticate);   // ← verify access-token, sets req.auth
 app.use(attachUser);     // ← find-or-create User, sets req.userDoc

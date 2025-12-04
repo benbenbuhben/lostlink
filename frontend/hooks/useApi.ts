@@ -1,14 +1,26 @@
 import { useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 
-// ⚠️ IMPORTANT: Change this IP address to your computer's actual IP address!
-// How to find your IP:
-// 1. Mac: System Preferences → Network → Look for "Status: Connected" 
-// 2. Terminal: ifconfig en0 | grep inet
-// 3. Common formats: 192.168.1.xxx or 192.168.0.xxx
+// API URL 설정: 환경변수 또는 프로덕션 기본값 사용
+// 프로덕션에서는 https://api.thomasha.dev 사용
+// 로컬 개발에서는 환경변수 또는 기본 로컬 IP 사용
+const getDefaultUrl = () => {
+  // 프로덕션 환경 감지 (Vercel 배포 환경)
+  if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+    return 'https://api.thomasha.dev';
+  }
+  // 로컬 개발 환경
+  return 'http://192.168.254.29:5001';
+};
 
-const RAW_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.254.29:5001';
+const RAW_URL = process.env.EXPO_PUBLIC_API_URL ?? getDefaultUrl();
 const API_URL = RAW_URL.replace(/\/+$/, ''); // Remove trailing slash
+
+// 빌드 시점에 API URL 로그 (디버깅용)
+if (typeof window !== 'undefined') {
+  console.log('🌐 API URL configured:', API_URL);
+  console.log('🌐 EXPO_PUBLIC_API_URL from env:', process.env.EXPO_PUBLIC_API_URL || 'not set');
+}
 
 type Json = Record<string, unknown>;
 
