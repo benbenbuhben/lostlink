@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Dimensions, AppState, Platform, Image } from 'react-native';
+import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Dimensions, AppState, Platform, Image, ViewStyle, TextStyle, ImageStyle } from 'react-native';
 import { Appbar, Card, Text, Chip } from 'react-native-paper';
 import { useAuthStore } from '@/store/authStore';
 import { useApi } from '../../hooks/useApi';
@@ -9,9 +9,6 @@ import { LoadingView } from '@/components/LoadingView';
 import { ErrorView } from '@/components/ErrorView';
 import { EmptyStateView } from '@/components/EmptyStateView';
 import RequireAuth from '@/components/RequireAuth';
-import { Card as ShadcnCard, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 
 interface Item {
   _id: string;
@@ -152,67 +149,50 @@ function FeedScreen() {
     return (
       <TouchableOpacity
         onPress={() => handleItemPress(item._id)}
-        className="mb-6 group animate-fade-in"
+        style={{ marginBottom: 24 }}
         accessibilityLabel={`View details for ${item.title}`}
         accessibilityRole="button"
       >
-        <ShadcnCard className="overflow-hidden bg-white border border-gray-100 shadow-soft hover-lift transition-all duration-300 rounded-xl">
+        <Card style={styles.webItemCard} elevation={3}>
           {item.imageUrl && (
-            <View className="relative overflow-hidden">
-              <Image
-                source={{ uri: item.imageUrl }}
-                style={{ width: '100%', height: 240 }}
-                resizeMode="cover"
-                className="group-hover:scale-105 transition-transform duration-500"
-                accessibilityLabel={`Image of ${item.title}`}
-              />
-              <View className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            </View>
+            <Card.Cover
+              source={{ uri: item.imageUrl }}
+              style={styles.webItemImage}
+              accessibilityLabel={`Image of ${item.title}`}
+            />
           )}
-          
-          <CardHeader className="pb-3">
-            <CardTitle className="text-xl font-bold text-gray-900 leading-tight line-clamp-2 group-hover:text-primary transition-colors duration-200">
+          <Card.Content style={styles.webCardContent}>
+            <Text variant="titleLarge" style={styles.webItemTitle} numberOfLines={2}>
               {item.title}
-            </CardTitle>
-          </CardHeader>
-          
-          <CardContent className="space-y-3 pt-0">
-            <View className="flex-row items-center space-x-2">
-              <View className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center">
-                <Text className="text-xs">📍</Text>
-              </View>
-              <Text className="text-sm font-medium text-gray-700 flex-1">{item.location}</Text>
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+              <Text variant="bodyMedium" style={styles.webItemLocation}>
+                📍 {item.location}
+              </Text>
             </View>
-            
             {item.description && (
-              <Text className="text-sm text-gray-600 leading-relaxed line-clamp-2">
+              <Text variant="bodyMedium" style={styles.webItemDescription} numberOfLines={2}>
                 {item.description}
               </Text>
             )}
-            
             {item.tags && item.tags.length > 0 && (
-              <View className="flex-row flex-wrap gap-2 pt-2">
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
                 {item.tags.map((tag) => (
-                  <Badge 
-                    key={tag} 
-                    variant="outline" 
-                    className="text-xs px-3 py-1 border-primary/20 bg-gradient-to-r from-primary/5 to-primary/10 text-primary font-medium hover:from-primary/10 hover:to-primary/20 transition-all duration-200"
-                  >
+                  <Chip key={tag} mode="outlined" style={{ marginRight: 4, marginBottom: 4 }}>
                     {tag}
-                  </Badge>
+                  </Chip>
                 ))}
               </View>
             )}
-            
-            <View className="flex-row items-center justify-between pt-2 border-t border-gray-100">
-              <View className="flex-row items-center space-x-2">
-                <View className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <Text className="text-xs font-medium text-gray-500">Active</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f3f4f6' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#10b981', marginRight: 6 }} />
+                <Text variant="bodySmall" style={{ color: '#6b7280' }}>Active</Text>
               </View>
-              <Text className="text-xs text-gray-400 font-medium">{formatDate(item.createdAt)}</Text>
+              <Text variant="bodySmall" style={{ color: '#9ca3af' }}>{formatDate(item.createdAt)}</Text>
             </View>
-          </CardContent>
-        </ShadcnCard>
+          </Card.Content>
+        </Card>
       </TouchableOpacity>
     );
   }, [handleItemPress]);
@@ -280,13 +260,10 @@ function FeedScreen() {
 
     if (isWeb) {
       return (
-        <View className="bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 px-6 py-3 border-b border-primary/10 backdrop-blur-sm">
-          <View className="flex-row items-center justify-center space-x-2">
-            <View className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <Text className="text-xs font-semibold text-gray-700">
-              Loaded <Text className="text-primary font-bold">{items.length}</Text> items in <Text className="text-primary font-bold">{loadTime}ms</Text>
-            </Text>
-          </View>
+        <View style={styles.webPerformanceContainer}>
+          <Text variant="bodySmall" style={styles.webPerformanceText}>
+            Loaded <Text style={{ fontWeight: 'bold', color: '#3b82f6' }}>{items.length}</Text> items in <Text style={{ fontWeight: 'bold', color: '#3b82f6' }}>{loadTime}ms</Text>
+          </Text>
         </View>
       );
     }
@@ -352,38 +329,14 @@ function FeedScreen() {
   }
 
   const WebHeader = isWeb ? (
-    <View className="glass border-b border-gray-200/50 sticky top-0 z-50 backdrop-blur-xl bg-white/80">
-      <View className="max-w-7xl mx-auto px-6 py-4 flex-row justify-between items-center">
-        <View className="flex-row items-center space-x-3">
-          <View className="w-10 h-10 rounded-xl bg-gradient-primary flex items-center justify-center shadow-glow">
-            <Text className="text-white font-bold text-lg">L</Text>
-          </View>
-          <View>
-            <Text className="text-2xl font-bold text-gradient bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
-              LostLink
-            </Text>
-            <Text className="text-xs text-gray-500 font-medium">Lost & Found Platform</Text>
-          </View>
-        </View>
-        <View className="flex-row items-center space-x-4">
-          <View className="hidden md:flex items-center space-x-2 px-4 py-2 rounded-lg bg-gray-50">
-            <View className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <Text className="text-sm font-medium text-gray-700">{items.length} items</Text>
-          </View>
-          <Button 
-            variant="ghost" 
-            onPress={logout} 
-            className="text-gray-600 hover:bg-gray-100 px-4 py-2 rounded-lg transition-colors duration-200"
-          >
-            <Text className="font-medium">Logout</Text>
-          </Button>
-        </View>
-      </View>
-    </View>
+    <Appbar.Header style={{ backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' }}>
+      <Appbar.Content title="LostLink" />
+      <Appbar.Action icon="logout" onPress={logout} accessibilityLabel="Logout" />
+    </Appbar.Header>
   ) : null;
 
   return (
-    <View style={styles.container} className={isWeb ? "bg-gradient-to-br from-gray-50 via-white to-gray-50 min-h-screen" : ""}>
+    <View style={[styles.container, isWeb && styles.webContainer]}>
       {WebHeader}
       {!isWeb && (
         <Appbar.Header>
@@ -393,27 +346,13 @@ function FeedScreen() {
       )}
 
       {items.length === 0 ? (
-        <View className={isWeb ? "flex-1 flex items-center justify-center px-6 py-20" : ""}>
-          <View className={isWeb ? "max-w-md w-full text-center space-y-6" : ""}>
-            <View className={isWeb ? "w-24 h-24 mx-auto rounded-full bg-gradient-primary flex items-center justify-center shadow-soft mb-4" : ""}>
-              <Text className={isWeb ? "text-5xl" : ""}>📦</Text>
-            </View>
-            <View>
-              <Text className={isWeb ? "text-3xl font-bold text-gray-900 mb-3" : ""}>
-                No items found yet
-              </Text>
-              <Text className={isWeb ? "text-gray-600 leading-relaxed mb-8" : ""}>
-                Be the first to report a found item and help someone recover their lost belongings!
-              </Text>
-            </View>
-            <Button 
-              onPress={navigateToReport}
-              className={isWeb ? "bg-gradient-primary text-white px-8 py-4 rounded-xl shadow-soft hover-lift font-semibold text-lg" : ""}
-            >
-              <Text className={isWeb ? "text-white font-semibold" : ""}>Report Found Item</Text>
-            </Button>
-          </View>
-        </View>
+        <EmptyStateView
+          emoji="📦"
+          title="No items found yet"
+          description="Be the first to report a found item and help someone recover their lost belongings!"
+          actionLabel="Report Found Item"
+          onAction={navigateToReport}
+        />
       ) : (
         <>
           {PerformanceInfo}
@@ -456,6 +395,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f6f6f6",
   },
+  webContainer: {
+    backgroundColor: '#f9fafb',
+  },
   performanceContainer: {
     backgroundColor: 'white',
     paddingHorizontal: 16,
@@ -463,8 +405,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
+  webPerformanceContainer: {
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#dbeafe',
+  },
   performanceText: {
     color: '#666',
+    fontSize: 12,
+  },
+  webPerformanceText: {
+    color: '#1e40af',
     fontSize: 12,
   },
   itemCard: {
@@ -473,25 +426,59 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
   },
+  webItemCard: {
+    marginBottom: 24,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+  },
   itemImage: {
     height: 120,
   },
+  webItemImage: {
+    height: 240,
+  },
   cardContent: {
     padding: 16,
+  },
+  webCardContent: {
+    padding: 20,
   },
   itemTitle: {
     fontWeight: 'bold',
     marginBottom: 6,
     color: '#1a1a1a',
   },
+  webItemTitle: {
+    fontWeight: 'bold',
+    fontSize: 20,
+    color: '#111827',
+    marginBottom: 8,
+  },
   itemLocation: {
     color: '#666',
     marginBottom: 4,
+  },
+  webItemLocation: {
+    color: '#374151',
+    fontSize: 14,
+    fontWeight: '500',
   },
   itemDescription: {
     color: '#888',
     marginBottom: 6,
     lineHeight: 18,
+  },
+  webItemDescription: {
+    color: '#6b7280',
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
   },
   itemDate: {
     color: '#999',
@@ -500,6 +487,6 @@ const styles = StyleSheet.create({
   listContainer: {
     paddingVertical: 8,
   },
-});
+} as const);
 
 export default FeedScreen;

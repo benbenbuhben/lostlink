@@ -3,10 +3,10 @@ import React from 'react';
 import { View, StyleSheet, Image } from 'react-native';
 import { Button, Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { useAuth } from '@/context/AuthContext';
+import { useAuthStore } from '@/store/authStore';
 
 export default function LandingScreen() {
-  const { login } = useAuth();
+  const { login } = useAuthStore();
   const router = useRouter();
 
   return (

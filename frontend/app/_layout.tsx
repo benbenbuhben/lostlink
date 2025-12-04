@@ -8,11 +8,7 @@ import 'react-native-reanimated';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { PaperProvider } from 'react-native-paper';
-import { Platform } from 'react-native';
-
-if (Platform.OS === 'web') {
-  require('../global.css');
-}
+import { Platform, View, Text } from 'react-native';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useAuthStore } from '@/store/authStore';
@@ -28,7 +24,13 @@ function AuthAwareStack() {
   const pathname = usePathname();
 
   /* wait until auth store finishes bootstrapping */
-  if (!ready) return null;
+  if (!ready) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
 
   // Redirect authenticated users away from /landing
   if (user && pathname.startsWith('/landing')) {
