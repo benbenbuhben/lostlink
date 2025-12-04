@@ -46,7 +46,7 @@ export default function SupportScreen() {
               </Text>
               <Text style={styles.contactInfo}>📧 Email: support@lostlink.app</Text>
               <Text style={styles.contactInfo}>⏰ Response Time: Usually within 24 hours</Text>
-              <Text style={styles.contactInfo}>🏫 Campus: CityU CS624 Project</Text>
+              <Text style={styles.contactInfo}>👨‍💻 Developed by: Thomas Ha & Benjamin Hurst</Text>
             </View>
 
             <Button

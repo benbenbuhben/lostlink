@@ -129,12 +129,12 @@ export default function PrivacyScreen() {
                 📧 privacy@lostlink.app
               </Text>
               <Text style={styles.contact}>
-                🏫 CityU CS624 - LostLink Team
+                👨‍💻 Developed by Thomas Ha & Benjamin Hurst
               </Text>
             </View>
 
             <Text variant="bodySmall" style={styles.note}>
-              This is a simplified privacy policy for an academic project. In a production environment, this would be more comprehensive and legally reviewed.
+              This is a simplified privacy policy for a portfolio project. In a production environment, this would be more comprehensive and legally reviewed.
             </Text>
           </Card.Content>
         </Card>

@@ -33,7 +33,7 @@ export default function TermsScreen() {
                 1. Service Description
               </Text>
               <Text style={styles.bodyText}>
-                LostLink is a platform that helps connect people who have lost items with those who have found them. This is an academic project developed for CityU CS624.
+                LostLink is a platform that helps connect people who have lost items with those who have found them. This is a personal portfolio project developed by Thomas Ha and Benjamin Hurst.
               </Text>
             </View>
 
@@ -82,7 +82,7 @@ export default function TermsScreen() {
                 5. Disclaimers
               </Text>
               <Text style={styles.bodyText}>
-                • LostLink is provided "as is" for educational purposes
+                • LostLink is provided "as is" as a portfolio project
               </Text>
               <Text style={styles.bodyText}>
                 • We cannot guarantee successful item recovery
@@ -115,10 +115,10 @@ export default function TermsScreen() {
 
             <View style={styles.section}>
               <Text variant="titleMedium" style={styles.sectionTitle}>
-                7. Academic Project Notice
+                7. Project Information
               </Text>
               <Text style={styles.bodyText}>
-                LostLink is developed as an academic project for CityU CS624. This service is for educational demonstration purposes and may not be available long-term.
+                LostLink is a personal portfolio project developed by Thomas Ha and Benjamin Hurst. This service demonstrates full-stack development capabilities including React Native, Node.js, and cloud infrastructure.
               </Text>
             </View>
 
@@ -130,7 +130,7 @@ export default function TermsScreen() {
                 For questions about these terms or to report issues:
               </Text>
               <Text style={styles.contact}>📧 legal@lostlink.app</Text>
-              <Text style={styles.contact}>🏫 CityU CS624 - LostLink Team</Text>
+              <Text style={styles.contact}>👨‍💻 Developed by Thomas Ha & Benjamin Hurst</Text>
             </View>
 
             <Text variant="bodySmall" style={styles.note}>
