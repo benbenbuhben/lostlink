@@ -71,20 +71,26 @@ function ItemDetailScreen() {
     }
   };
 
-  const fetchItem = async () => {
+  const fetchItem = async (silent = false) => {
     if (!id) return;
     
     try {
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
       setError(null);
       const response = await get<Item>(`/items/${id}`);
       setItem(response);
     } catch (error) {
       console.error('Failed to fetch item:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load item';
-      setError(errorMessage);
+      if (!silent) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to load item';
+        setError(errorMessage);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -130,40 +136,21 @@ function ItemDetailScreen() {
       const responseTime = Date.now() - startTime;
       console.log(`🚀 Claim submission took ${responseTime}ms`);
       
-      // Success handling with improved UX
-      const claimData = response.claim || response;
+      // Success notification
       const performance = response.performance;
-      
-      // Enhanced confirmation alert
-      Alert.alert(
-        '🎉 Claim Submitted Successfully!',
-        `Your claim has been submitted and the item owner will be notified.\n\n` +
-        `${performance?.emailQueued ? '📧 Email notification sent to owner\n' : ''}` +
-        `📬 Reply will be sent to: ${claimerEmail}\n` +
-        `⚡ Response time: ${responseTime}ms\n\n` +
-        `What happens next:\n` +
-        `• The owner will review your claim\n` +
-        `• If approved, they'll contact you at ${claimerEmail}\n` +
-        `• Be ready to provide proof of ownership`,
-        [
-          { 
-            text: 'Stay Here', 
-            onPress: () => {
-              setClaimMessage('');
-              setClaimerEmail('');
-              fetchItem(); // Refresh to show new claim
-            }
-          },
-          { 
-            text: 'Go to Feed', 
-            onPress: () => {
-              safeGoBack();
-            },
-            style: 'default'
-          }
-        ],
-        { cancelable: false }
+      setSnackMessage(
+        `✅ Claim submitted successfully! ${performance?.emailQueued ? 'Owner notified via email.' : ''}`
       );
+      setShowSnack(true);
+      
+      // Clear form
+      setClaimMessage('');
+      setClaimerEmail('');
+      
+      // Auto-refresh to show new claim
+      setTimeout(() => {
+        fetchItem();
+      }, 500);
       
     } catch (error) {
       console.error('Failed to submit claim:', error);
@@ -192,6 +179,17 @@ function ItemDetailScreen() {
 
   useEffect(() => {
     fetchItem();
+  }, [id]);
+
+  // Auto-refresh every 15 seconds for real-time updates (silent refresh)
+  useEffect(() => {
+    if (!id) return;
+    
+    const interval = setInterval(() => {
+      fetchItem(true); // Silent refresh - no loading indicator
+    }, 15000); // 15초마다 자동 업데이트
+    
+    return () => clearInterval(interval);
   }, [id]);
 
   if (loading) {

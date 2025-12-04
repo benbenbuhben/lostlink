@@ -14,6 +14,13 @@ export const authenticate = (req, res, next) => {
     return next();
   }
 
+  // 토큰이 없으면 검증 스킵 (로그 스팸 방지)
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    req.auth = undefined;
+    return next();
+  }
+
   // Actual JWT verification middleware
   const jwtCheck = auth({
     issuerBaseURL: `https://${AUTH0_DOMAIN}/`,
@@ -25,7 +32,8 @@ export const authenticate = (req, res, next) => {
   // Continue even if JWT error occurs
   jwtCheck(req, res, (err) => {
     if (err) {
-      // 인증 오류는 정상 동작 (allowAnonymous: true)이므로 로그하지 않음
+      // "no applicable key found" 에러는 무시 (로그 스팸 방지)
+      // 토큰이 있지만 무효한 경우만 조용히 처리
       req.auth = undefined; // Set to undefined on error
     }
     next(); // Continue regardless of error

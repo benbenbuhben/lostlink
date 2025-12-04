@@ -113,6 +113,15 @@ function FeedScreen() {
     fetchItems();
   }, [fetchItems]);
 
+  // Auto-refresh every 30 seconds for real-time updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchItems(true); // Silent refresh
+    }, 30000); // 30초마다 자동 업데이트
+    
+    return () => clearInterval(interval);
+  }, [fetchItems]);
+
   useFocusEffect(
     useCallback(() => {
       console.log('🔄 Feed tab focused - refreshing...');
