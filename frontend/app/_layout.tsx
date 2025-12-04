@@ -10,6 +10,10 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { PaperProvider } from 'react-native-paper';
 import { Platform } from 'react-native';
 
+if (Platform.OS === 'web') {
+  require('../global.css');
+}
+
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useAuthStore } from '@/store/authStore';
 
