@@ -25,7 +25,12 @@ export const authenticate = (req, res, next) => {
   // Continue even if JWT error occurs
   jwtCheck(req, res, (err) => {
     if (err) {
-      console.warn('⚠️  JWT token error (ignoring and continuing):', err.message);
+      // Public endpoints에서 인증 오류는 정상이므로 로그를 줄임
+      const isPublicEndpoint = ['/test', '/env-check', '/'].includes(req.path);
+      if (!isPublicEndpoint && process.env.NODE_ENV === 'production') {
+        // 프로덕션에서만 protected 엔드포인트의 인증 오류 로그
+        console.warn('⚠️  JWT token error (ignoring and continuing):', err.message);
+      }
       req.auth = undefined; // Set to undefined on error
     }
     next(); // Continue regardless of error
