@@ -1,18 +1,45 @@
-import { PutObjectCommand, HeadBucketCommand, CreateBucketCommand, PutBucketPolicyCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, HeadBucketCommand, CreateBucketCommand, PutBucketPolicyCommand, S3Client } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
 import s3Client from '../config/minioClient.js';
 
+// 실제 사용 시점에 S3Client 생성 (환경변수가 확실히 로드된 후)
+function getS3Client() {
+  // 이미 생성된 클라이언트가 있으면 사용
+  if (s3Client) {
+    return s3Client;
+  }
+
+  // 없으면 동적으로 생성
+  const accessKeyId = process.env.MINIO_ACCESS_KEY?.trim();
+  const secretAccessKey = process.env.MINIO_SECRET_KEY?.trim();
+  const region = process.env.MINIO_REGION?.trim() || 'us-east-1';
+
+  if (!accessKeyId || !secretAccessKey) {
+    throw new Error('AWS S3 credentials (MINIO_ACCESS_KEY, MINIO_SECRET_KEY) must be set');
+  }
+
+  console.log('🔑 Creating S3Client dynamically...');
+  console.log('   Access Key:', accessKeyId.substring(0, 8) + '...');
+  console.log('   Region:', region);
+
+  return new S3Client({
+    region: region,
+    credentials: {
+      accessKeyId: accessKeyId,
+      secretAccessKey: secretAccessKey,
+    },
+  });
+}
+
 export default async function uploadToS3(file) {
   // file: { buffer, originalname, mimetype }
-  const bucket = process.env.MINIO_BUCKET_NAME;
+  const bucket = process.env.MINIO_BUCKET_NAME?.trim();
   if (!bucket) {
     throw new Error('MINIO_BUCKET_NAME not set');
   }
 
-  // S3Client가 없으면 (credentials가 설정되지 않았으면) 에러
-  if (!s3Client) {
-    throw new Error('AWS S3 credentials (MINIO_ACCESS_KEY, MINIO_SECRET_KEY) must be set in environment variables');
-  }
+  // 실제 사용 시점에 S3Client 가져오기 (동적 생성)
+  const client = getS3Client();
 
   const ext = file.originalname.split('.').pop();
   const key = `${uuidv4()}.${ext}`;
@@ -38,13 +65,13 @@ export default async function uploadToS3(file) {
                    process.env.MINIO_ENDPOINT.includes('192.168'));
 
   try {
-    await s3Client.send(new HeadBucketCommand({ Bucket: bucket }));
+    await client.send(new HeadBucketCommand({ Bucket: bucket }));
   } catch (err) {
     if (err?.$metadata?.httpStatusCode === 404 || err.Code === 'NotFound' || err.Code === 'NoSuchBucket') {
       if (isMinIO) {
         // MinIO: auto-create bucket
         console.log(`Bucket ${bucket} does not exist – creating...`);
-        await s3Client.send(new CreateBucketCommand({ Bucket: bucket }));
+        await client.send(new CreateBucketCommand({ Bucket: bucket }));
       } else {
         // AWS S3: bucket must be pre-created
         throw new Error(`Bucket ${bucket} does not exist. Please create it in AWS S3 Console first.`);
@@ -56,7 +83,7 @@ export default async function uploadToS3(file) {
 
   // Apply (or re-apply) public-read policy
   try {
-    await s3Client.send(
+    await client.send(
       new PutBucketPolicyCommand({ Bucket: bucket, Policy: JSON.stringify(policy) }),
     );
   } catch (policyErr) {
@@ -70,7 +97,7 @@ export default async function uploadToS3(file) {
     ContentType: file.mimetype,
   });
 
-  await s3Client.send(cmd);
+  await client.send(cmd);
   console.log(`File uploaded to ${bucket}/${key}`);
 
   // Generate public URL based on storage type
@@ -81,8 +108,8 @@ export default async function uploadToS3(file) {
     publicUrl = `${baseUrl.replace(/\/$/, '')}/${bucket}/${key}`;
   } else {
     // AWS S3: use standard S3 URL format
-    const region = process.env.MINIO_REGION || 'us-east-1';
-    const baseUrl = process.env.MINIO_PUBLIC_URL || `https://${bucket}.s3.${region}.amazonaws.com`;
+    const region = process.env.MINIO_REGION?.trim() || 'us-east-1';
+    const baseUrl = process.env.MINIO_PUBLIC_URL?.trim() || `https://${bucket}.s3.${region}.amazonaws.com`;
     publicUrl = `${baseUrl.replace(/\/$/, '')}/${key}`;
   }
 
