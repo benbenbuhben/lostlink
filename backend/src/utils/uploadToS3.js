@@ -1,6 +1,6 @@
 import { PutObjectCommand, HeadBucketCommand, CreateBucketCommand, PutBucketPolicyCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
-import s3Client from '../config/minioClient.js';
+import getS3Client from '../config/minioClient.js';
 
 export default async function uploadToS3(file) {
   // file: { buffer, originalname, mimetype }
@@ -8,6 +8,9 @@ export default async function uploadToS3(file) {
   if (!bucket) {
     throw new Error('MINIO_BUCKET_NAME not set');
   }
+
+  // Get S3 client (lazy initialization)
+  const s3Client = getS3Client();
 
   const ext = file.originalname.split('.').pop();
   const key = `${uuidv4()}.${ext}`;
