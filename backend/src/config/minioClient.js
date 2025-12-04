@@ -7,11 +7,22 @@ const isMinIO = process.env.MINIO_ENDPOINT &&
                  process.env.MINIO_ENDPOINT.includes('192.168') ||
                  process.env.MINIO_ENDPOINT.includes('127.0.0.1'));
 
+// AWS S3 credentials 확인
+const accessKeyId = process.env.MINIO_ACCESS_KEY;
+const secretAccessKey = process.env.MINIO_SECRET_KEY;
+
+if (!accessKeyId || !secretAccessKey) {
+  console.error('❌ AWS S3 credentials not configured!');
+  console.error('   MINIO_ACCESS_KEY:', accessKeyId ? '***set***' : 'NOT SET');
+  console.error('   MINIO_SECRET_KEY:', secretAccessKey ? '***set***' : 'NOT SET');
+  throw new Error('AWS S3 credentials (MINIO_ACCESS_KEY, MINIO_SECRET_KEY) must be set in environment variables');
+}
+
 const s3Config = {
   region: process.env.MINIO_REGION || 'us-east-1',
   credentials: {
-    accessKeyId: process.env.MINIO_ACCESS_KEY,
-    secretAccessKey: process.env.MINIO_SECRET_KEY,
+    accessKeyId: accessKeyId,
+    secretAccessKey: secretAccessKey,
   },
 };
 
