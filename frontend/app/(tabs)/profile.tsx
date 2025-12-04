@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Card, Text, Button, Avatar, Divider, List, Appbar, Chip } from 'react-native-paper';
-import { useAuth } from '../../context/AuthContext';
+import { useAuthStore } from '@/store/authStore';
 import { useRouter } from 'expo-router';
 import RequireAuth from '@/components/RequireAuth';
 import { useMyFoundItems } from '@/hooks/useMyFoundItems';
@@ -10,7 +10,7 @@ import { useUpdateClaimStatus } from '@/hooks/useUpdateClaimStatus';
 // statusStyleMap moved below styles
 
 function ProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout } = useAuthStore();
   const router = useRouter();
   const {
     data: myItems = [],

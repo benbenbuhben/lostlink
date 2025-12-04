@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuthStore } from '../store/authStore';
 
 // API URL 설정: 런타임에 결정
 // 프로덕션에서는 https://api.thomasha.dev 사용
@@ -36,7 +36,7 @@ type Json = Record<string, unknown>;
 
 export function useApi() {
   /* 현재 로그인 토큰 */
-  const { accessToken } = useAuth();
+  const { accessToken } = useAuthStore();
 
   /* baseUrl은 런타임에 계산 (프로덕션 환경 감지) */
   const [baseUrl] = useState(() => getApiUrl());

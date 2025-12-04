@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { fetchItems, Item, PaginatedResponse } from '@/lib/api';
-import { useAuth } from '@/context/AuthContext';
+import { useAuthStore } from '@/store/authStore';
 
 interface UseItemsResult {
   data?: { pages: { data: Item[]; pagination: { total: number; page: number; limit: number } }[] };
@@ -13,7 +13,7 @@ interface UseItemsResult {
 }
 
 export function useItems(): UseItemsResult {
-  const { accessToken } = useAuth();
+  const { accessToken } = useAuthStore();
 
   const query = useInfiniteQuery({
     queryKey: ['items'],

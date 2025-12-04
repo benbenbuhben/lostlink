@@ -24,7 +24,7 @@ import { LoadingView } from '@/components/LoadingView';
 import { ErrorView } from '@/components/ErrorView';
 import { EmptyStateView } from '@/components/EmptyStateView';
 import RequireAuth from '@/components/RequireAuth';
-import { useAuth } from '../../context/AuthContext';
+import { useAuthStore } from '@/store/authStore';
 import Highlighter from '@/components/Highlighter';
 
 interface Item {
@@ -58,7 +58,7 @@ const { width: screenWidth } = Dimensions.get('window');
 function SearchScreen() {
   const router = useRouter();
   const { get } = useApi();
-  const { logout } = useAuth();
+  const { logout } = useAuthStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState('');

@@ -1,10 +1,10 @@
 import * as React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Button, Text } from 'react-native-paper';
-import { useAuth } from '@/context/AuthContext';
+import { useAuthStore } from '@/store/authStore';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user, login, ready } = useAuth();
+  const { user, login, ready } = useAuthStore();
 
   if (!ready) return null;
 

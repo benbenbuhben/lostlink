@@ -13,7 +13,7 @@ import {
   Snackbar
 } from 'react-native-paper';
 import { useApi } from '../../hooks/useApi';
-import { useAuth } from '../../context/AuthContext';
+import { useAuthStore } from '@/store/authStore';
 import { LoadingView } from '@/components/LoadingView';
 import { ErrorView } from '@/components/ErrorView';
 
@@ -51,7 +51,7 @@ function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const routerHook = useRouter();
   const { get, post } = useApi();
-  const { user } = useAuth();
+  const { user } = useAuthStore();
   
   const [item, setItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);

@@ -3,7 +3,7 @@ import { View, StyleSheet, ScrollView, Alert, Image, TouchableOpacity, Platform 
 import { Button, Card, Text, TextInput, Portal, Snackbar, Appbar } from 'react-native-paper';
 import * as ImagePicker from 'expo-image-picker';
 import { useApi } from '../../hooks/useApi';
-import { useAuth } from '../../context/AuthContext';
+import { useAuthStore } from '@/store/authStore';
 import { useRouter } from 'expo-router';
 import RequireAuth from '@/components/RequireAuth';
 
@@ -21,7 +21,7 @@ interface ItemResponse {
 
 function ReportScreen() {
   const { postForm } = useApi();
-  const { user, logout } = useAuth();
+  const { user, logout } = useAuthStore();
   const router = useRouter();
 
   const [title, setTitle] = useState('');
