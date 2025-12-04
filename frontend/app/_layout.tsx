@@ -8,21 +8,22 @@ import 'react-native-reanimated';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { PaperProvider } from 'react-native-paper';
+import { Platform } from 'react-native';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { useAuthStore } from '@/store/authStore';
 
 SplashScreen.preventAutoHideAsync();
 const queryClient = new QueryClient();
 
 /* ----------------------- auth-aware router ----------------------- */
 function AuthAwareStack() {
-  const { user, ready } = useAuth();
+  const { user, ready } = useAuthStore();
   const router = useRouter();
   const { usePathname } = require('expo-router');
   const pathname = usePathname();
 
-  /* wait until AuthProvider finishes bootstrapping */
+  /* wait until auth store finishes bootstrapping */
   if (!ready) return null;
 
   // Redirect authenticated users away from /landing
@@ -63,20 +64,23 @@ export default function RootLayout() {
     if (fontsLoaded) SplashScreen.hideAsync();
   }, [fontsLoaded]);
 
+  /* initialize auth store */
+  useEffect(() => {
+    useAuthStore.getState().initialize();
+  }, []);
+
   if (!fontsLoaded) return null;
 
   return (
     <PaperProvider>
-      <AuthProvider>
-        <QueryClientProvider client={queryClient}>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-            <AuthAwareStack />
-            <StatusBar style="auto" />
-          </ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <AuthAwareStack />
+          <StatusBar style="auto" />
+        </ThemeProvider>
 
-          {/* devtools are handy – remove in prod */}
-        </QueryClientProvider>
-      </AuthProvider>
+        {/* devtools are handy – remove in prod */}
+      </QueryClientProvider>
     </PaperProvider>
   );
 }
