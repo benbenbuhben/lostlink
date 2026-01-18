@@ -8,15 +8,24 @@
 
 ---
 
-## Demo Video
+## Demo Videos
 
-**Coming Soon** - Demo video will be available here.
+| Feature | Demo |
+|---------|------|
+| **Claim Flow** | [![Claim Demo](https://img.youtube.com/vi/t_Ym0O9VG6U/maxresdefault.jpg)](https://www.youtube.com/watch?v=t_Ym0O9VG6U) |
+| **Report Item** | [![Report Demo](https://img.youtube.com/vi/Hn62M99SXIo/maxresdefault.jpg)](https://www.youtube.com/watch?v=Hn62M99SXIo) |
+| **Search Feature** | [![Search Demo](https://img.youtube.com/vi/fPnVUFPhOA0/maxresdefault.jpg)](https://www.youtube.com/watch?v=fPnVUFPhOA0) |
 
 ---
 
 ## Screenshots
 
-<!-- Add 2-3 screenshots here -->
+<div align="center">
+  <img src="Images/Feed.PNG" alt="Feed Screen" width="300"/>
+  <img src="Images/Report.PNG" alt="Report Screen" width="300"/>
+  <img src="Images/Search.PNG" alt="Search Screen" width="300"/>
+  <img src="Images/Profile.PNG" alt="Profile Screen" width="300"/>
+</div>
 
 ---
 
